@@ -8,7 +8,7 @@ import { StateAttributes } from "./state.component";
 
 import Make from "@rbxts/make";
 import Signal from "@rbxts/signal";
-import type { CharacterSelectController } from "@quarrelgame-framework/client";
+// import type { CharacterSelectController } from "@quarrelgame-framework/client";
 import {Character} from "util/character";
 // import type { QuarrelGame } from "@quarrelgame-framework/server";
 
@@ -103,6 +103,7 @@ export namespace Animator
         private async onStateChanged(newState: AttributeValue)
         {
             /* FIXME: uncomment after initial compilation */
+            /* FIXME: make this bound to characters instead of dependencies */
             // const Characters = RunService.IsServer() ? Dependency<QuarrelGame>().characters : Dependency<CharacterSelectController>().characters;
             const Characters = {} as Map<string, Character.Character>;
 
