@@ -1,5 +1,5 @@
 {
-    "name": "UntitledQuarrelGame",
+    "name": "@quarrelgame-framework/common",
     "version": "1.0.0",
     "description": "A flamework-based flamework for combat game development.",
     "main": "out/init.lua",
