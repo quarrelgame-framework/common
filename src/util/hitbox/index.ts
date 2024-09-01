@@ -140,7 +140,7 @@ export namespace Hitbox
         Attacker: A2;
         Attacked: A2;
 
-        AttackerIsBlocking: boolean;
+        AttackedIsBlocking: boolean;
         Region: HitboxRegion;
         Skill: Skill.Skill;
     }
@@ -242,7 +242,7 @@ export namespace Hitbox
                                     Attacker: possessorEntityComponent,
                                     Attacked: entityComponent,
 
-                                    AttackerIsBlocking: entityIsBlocking,
+                                    AttackedIsBlocking: entityIsBlocking,
                                     Region: this.hitbox.hitRegion,
                                     Skill: skill,
                                 };
