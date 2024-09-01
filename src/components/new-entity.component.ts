@@ -222,7 +222,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 
     public Crouch(crouchState: boolean = ((this.attributes.State & EntityState.Crouch) > 0)) {
 
-        print("still dont nkow whats going ong");
+        print("still dont nkow whats going ong", crouchState, this.IsGrounded());
         if (crouchState)
         {
             if (this.IsGrounded())
@@ -289,11 +289,13 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         this.GroundSensor.SensedPart = heightRaycast?.Instance;
         this.GroundSensor.HitFrame = CFrame.lookAlong(heightRaycast?.Position ?? Vector3.zero, down);
         this.GroundSensor.HitNormal = heightRaycast?.Normal ?? down;
+        
+        return heightRaycast;
     }
 
     public IsGrounded()
     {
-        return !!this.GroundSensor.SensedPart
+        return this.CanBeModified() ? !!this.GroundSensor.SensedPart : !!this.SenseGround();
     }
 
     // TODO: Important - Fix bug where dot product in Facing is incorrect leading to blocks being non-functional
@@ -627,12 +629,17 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         if (this.rotationLocked === rotationMode)
             return;
 
-        this.Humanoid.AutoRotate = RotationMode.Locked ? false : true;
+        this.rotationLocked = rotationMode;
     }
 
     public UnlockRotation()
     {
         this.LockRotation(RotationMode.Unlocked);
+    }
+
+    public Rotate(towards: Vector3)
+    {
+        this.ControllerManager.FacingDirection = towards;
     }
 
     // TODO: Implement a global state that allows developers to swap between
