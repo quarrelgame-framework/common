@@ -513,73 +513,42 @@ export namespace Skill
                      }
 
                      let attackDidLand = HitResult.Whiffed;
+                     let onContact: RBXScriptConnection | void;
 
-                     if (this.ActiveFrames > 0)
+                     const activeHitbox = this.Hitbox.Initialize(entity.GetPrimaryPart(), skill);
+                     entity.SetState(EntityState.Attack);
+                     onContact = activeHitbox.Contact.Connect(({
+                         Attacker,
+                         Attacked,
+
+                         AttackedIsBlocking,
+                         Region,
+                     }) =>
                      {
-                         let onContact: RBXScriptConnection | void;
-                         const activeHitbox = this.Hitbox.Initialize(entity.GetPrimaryPart(), skill);
-                         Promise.try(async () =>
+                         const setLandState = (result: HitResult): HitResult =>
                          {
-                             await waitFrames(this.ActiveFrames);
-                             activeHitbox.Stop();
-                             if (onContact)
+                             if (result === HitResult.Counter)
+                             {
+                                 if (!skill.CanCounter)
+                                     return attackDidLand = HitResult.Contact;
+                             }
+                             else if (result === HitResult.Contact)
+                             {
+                                 if (Attacked.CanCounter())
+                                     return setLandState(HitResult.Counter);
+                             }
 
-                                entity.ClearState(EntityState.Attack);
+                             return attackDidLand = result;
+                         };
 
-                             onContact = onContact?.Disconnect();
-                         });
-
-                         entity.SetState(EntityState.Attack);
-                         onContact = activeHitbox.Contact.Connect(({
-                             Attacker,
-                             Attacked,
-
-                             AttackedIsBlocking,
-                             Region,
-                         }) =>
+                         if (AttackedIsBlocking)
                          {
-                             const setLandState = (result: HitResult): HitResult =>
+                             if (Attacked.IsState(EntityState.Crouch))
                              {
-                                 if (result === HitResult.Counter)
-                                 {
-                                     if (!skill.CanCounter)
-                                         return attackDidLand = HitResult.Contact;
-                                 }
-                                 else if (result === HitResult.Contact)
-                                 {
-                                     if (Attacked.CanCounter())
-                                         return setLandState(HitResult.Counter);
-                                 }
-
-                                 return attackDidLand = result;
-                             };
-
-                             if (AttackedIsBlocking)
-                             {
-                                 if (Attacked.IsState(EntityState.Crouch))
-                                 {
-                                     if (Region === HitboxRegion.Overhead)
-                                     {
-                                         setLandState(HitResult.Contact);
-                                         Attacked.SetHitStun(skill.FrameData.HitStunFrames * gameMetadata.CrouchStunMultiplier);
-                                     }
-                                     else
-                                     {
-                                         setLandState(HitResult.Blocked);
-                                         Attacked.AddBlockStun(skill.FrameData.BlockStunFrames);
-                                     }
-
-                                     return res({
-                                         hitResult: attackDidLand,
-                                         attacker: entity,
-                                         attacked: Attacked,
-                                     });
-                                 }
-
-                                 if (Region === HitboxRegion.Low)
+                                 if (Region === HitboxRegion.Overhead)
                                  {
                                      setLandState(HitResult.Contact);
-                                     Attacked.SetState(EntityState.Hitstun);
+                                     Attacked.SetHitStun(skill.FrameData.HitStunFrames * gameMetadata.CrouchStunMultiplier);
                                  }
                                  else
                                  {
@@ -594,21 +563,43 @@ export namespace Skill
                                  });
                              }
 
-                             Attacker.SetState(EntityState.Hitstun);
-                             Attacked.SetHitStun(skill.FrameData.HitStunFrames);
-                             setLandState(HitResult.Contact);
-                             if (attackDidLand === HitResult.Counter)
-                                 Attacked.Counter(Attacker);
+                             if (Region === HitboxRegion.Low)
+                             {
+                                 setLandState(HitResult.Contact);
+                                 Attacked.SetState(EntityState.Hitstun);
+                             }
                              else
-                                 print("no Attacked");
+                             {
+                                 setLandState(HitResult.Blocked);
+                                 Attacked.AddBlockStun(skill.FrameData.BlockStunFrames);
+                             }
 
                              return res({
                                  hitResult: attackDidLand,
                                  attacker: entity,
                                  attacked: Attacked,
                              });
+                         }
+
+                         Attacker.SetState(EntityState.Hitstun);
+                         Attacked.SetHitStun(skill.FrameData.HitStunFrames);
+                         setLandState(HitResult.Contact);
+                         if (attackDidLand === HitResult.Counter)
+                             Attacked.Counter(Attacker);
+                         else
+                             print("no Attacked");
+
+                         return res({
+                             hitResult: attackDidLand,
+                             attacker: entity,
+                             attacked: Attacked,
                          });
-                     }
+                     });
+
+                     await waitFrames(this.ActiveFrames);
+                     activeHitbox.Stop();
+                     onContact = onContact?.Disconnect();
+                     entity.ClearState(EntityState.Attack);
 
                      if (this.RecoveryFrames > 0)
                      {
@@ -625,12 +616,12 @@ export namespace Skill
                          }
 
                          entity.SetState(EntityState.Recovery);
-                         await Promise.fromEvent(animatorAnimation.Ended);
-                         for (let i = 0; i < this.RecoveryFrames; i++)
-                         {
-                             if (animatorAnimation.IsPlaying())
-                                 await schedulerService.WaitForNextTick();
-                         }
+                         // await Promise.fromEvent(animatorAnimation.Ended);
+                         // for (let i = 0; i < this.RecoveryFrames; i++)
+                         // {
+                         //     if (animatorAnimation.IsPlaying())
+                         //         await schedulerService.WaitForNextTick();
+                         // }
                          print("waiting frames");
                          await waitFrames(this.RecoveryFrames);
                          entity.ClearState(EntityState.Recovery);
