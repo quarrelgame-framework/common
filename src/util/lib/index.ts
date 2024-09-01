@@ -267,30 +267,39 @@ export enum EntityState
      * A state where the Entity is
      * in their most neutral state.
      */
-    Idle = 0x001,
-    /**
-     * A state where the Entity
-     * is dashing.
-     */
-    Dash = 0x002,
+    Idle = 0x0001,
+
     /**
      * A state where the Entity
      * is walking.
      */
-    Walk = 0x004,
+    Walk = 0x0002,
+
+    /**
+     * A state where the Entity
+     * is dashing.
+     */
+    Dash = 0x0004,
+
+
+    /**
+     * A state where the entity
+     * is sprinting.
+     */
+    Sprint = 0x0008,
 
     /**
      * A state where the Entity
      * was hit.
      */
-    Hitstun = 0x008,
+    Hitstun = 0x0010,
 
     /**
      * A state where the Entity
      * was slammed down onto the
      * floor.
      */
-    Knockdown = 0x010,
+    Knockdown = 0x0020,
 
     /**
      * A state where the Entity is
@@ -299,57 +308,48 @@ export enum EntityState
      * Unused on MoveDirection-based
      * blocking.
      */
-    Block = 0x020,
+    Block = 0x0040,
 
     /**
      * A state where the Entity
      * is crouching.
      */
-    Crouch = 0x040,
+    Crouch = 0x0080,
 
     /**
      * A state where the Entity
      * is about to jump.
      */
-    Jumping = 0x080,
+    Jumping = 0x0100,
 
     /**
      * A state where the Entity is
      * midair.
      */
-    Midair = 0x100,
+    Midair = 0x0200,
 
     /**
      * A state where the Entity
      * is landing.
      */
-    Landing = 0x200,
+    Landing = 0x0400,
 
     /**
      * A state where the Entity is
      * starting up their attack.
      */
-    Startup = 0x400,
+    Startup = 0x0800,
     /**
      * A state where the Entity has
      * active hit frames.
      */
-    Attack = 0x800,
+    Attack = 0x1000,
     /**
      * A state where the Entity is
      * vulnerable after whiffing an
      * attack.
      */
-    Recovery = 0x1000,
-
-    /**
-     * A variant of the Recovery
-     * state where the Entity is able
-     * to cancel their move.
-     *
-     * @deprecated
-     */
-    RecoveryPositive = 0x2000,
+    Recovery = 0x2000,
 }
 
 /**
@@ -438,12 +438,12 @@ export function isStateNegative(state: EntityState)
         EntityState.Jumping,
         EntityState.Landing,
         EntityState.Dash,
-    ].includes(state);
+    ].some((v) => (state & v) > 0);
 }
 
 export function isStateCounterable(state: EntityState)
 {
-    return [ EntityState.Startup, EntityState.Attack ].includes(state);
+    return [ EntityState.Startup, EntityState.Attack ].some((v) => (state & v) > 0);
 }
 
 export function isStateAggressive(state: EntityState)
@@ -452,7 +452,7 @@ export function isStateAggressive(state: EntityState)
         EntityState.Startup,
         EntityState.Attack,
         EntityState.Recovery,
-    ].includes(state);
+    ].some((v) => (state & v) > 0);
 }
 
 export function isStateNeutral(state: EntityState)
@@ -464,7 +464,7 @@ export function isStateNeutral(state: EntityState)
         EntityState.Jumping,
         EntityState.Midair,
         EntityState.Landing,
-    ].includes(state);
+    ].some((v) => (state & v) > 0);
 }
 
 /**
