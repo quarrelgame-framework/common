@@ -1,10 +1,10 @@
 import { BaseComponent, Component, Components } from "@flamework/components";
-import { Dependency, OnRender, OnStart, OnTick } from "@flamework/core";
+import { Dependency, OnPhysics, OnRender, OnStart, OnTick } from "@flamework/core";
 import { Players, RunService, Workspace } from "@rbxts/services";
 import { Identifier } from "util/identifier";
 import { BlockMode, EntityState, PhysicsDash, isStateAggressive, isStateCounterable, isStateNegative, isStateNeutral } from "util/lib";
 import { StatefulComponent, StateAttributes } from "./state.component";
-import type { Managed, ICharacter } from "@quarrelgame-framework/types";
+import type { ICharacter, ICharacterR6 } from "@quarrelgame-framework/types";
 
 import Visuals from "util/CastVisuals";
 import { ConvertMotionToMoveDirection, Motion } from "util/input";
@@ -16,10 +16,11 @@ enum RotationMode
     Locked,
 }
 
-const Fetcher = <T extends keyof CreatableInstances>(thisInstance: Instance, instanceName: string, instanceToCreate: T): Instances[T] => {
-     if (RunService.IsServer())
+const Fetcher = <T extends keyof CreatableInstances>(thisInstance: Instance, instanceName: string, instanceToCreate: T, allowClient?: boolean): Instances[T] => {
+    const isServer = RunService.IsServer();
+     if (isServer || allowClient)
 
-        return thisInstance.FindFirstChild(instanceName) as Instances[T] ?? new Instance(instanceToCreate, thisInstance);
+        return (isServer ? thisInstance.FindFirstChild(instanceName) : thisInstance.WaitForChild(instanceName, 1.5)) as Instances[T] ?? new Instance(instanceToCreate, thisInstance);
 
      return thisInstance.WaitForChild(instanceName) as Instances[T];
 }
@@ -30,7 +31,15 @@ export interface EntityBaseAttributes extends StateAttributes {
 
     WalkSpeed: number
 
-    EntityState: number,
+    /*
+     * Determines whether the entity should be
+     * manipulated by the server or not.
+     *
+     * ⚠️ Changing this property also changes the 
+     * ownership of the instance. Be careful.
+     */
+    IsServerEntity: boolean,
+    State: number,
 }
 
 export const EntityBaseDefaults = {
@@ -39,17 +48,18 @@ export const EntityBaseDefaults = {
 
     WalkSpeed: 8,
 
-    EntityState: EntityState.Idle,
+    IsServerEntity: false,
+    State: EntityState.Idle,
 }
 
 @Component({
     defaults: EntityBaseDefaults
 })
-export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttributes, I extends ICharacter = Managed<ICharacter>> extends StatefulComponent<A, I> implements OnTick, OnStart {
+export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics {
     public readonly ControllerManager = Fetcher(this.instance.Humanoid, "ControllerManager", "ControllerManager")
-    public readonly GroundSensor = Fetcher(this.instance.HumanoidRootPart, "GroundSensor", "ControllerPartSensor")
-    public readonly ClimbSensor = Fetcher(this.instance.HumanoidRootPart, "ClimbSensor", "ControllerPartSensor");
-    public readonly SwimSensor = Fetcher(this.instance.HumanoidRootPart, "SwimSensor", "BuoyancySensor");
+    public readonly GroundSensor = Fetcher(this.instance.HumanoidRootPart, "GroundSensor", "ControllerPartSensor", true)
+    public readonly ClimbSensor = Fetcher(this.instance.HumanoidRootPart, "ClimbSensor", "ControllerPartSensor", true);
+    public readonly SwimSensor = Fetcher(this.instance.HumanoidRootPart, "SwimSensor", "BuoyancySensor", true);
     public readonly GroundController = Fetcher(this.ControllerManager, "GroundController", "GroundController");
     public readonly SwimController = Fetcher(this.ControllerManager, "SwimController", "SwimController");
     public readonly ClimbController = Fetcher(this.ControllerManager, "ClimbController", "ClimbController");
@@ -58,25 +68,44 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
     public readonly Humanoid = this.instance.Humanoid;
 
     public readonly GroundOffsetMultiplier = 1;
-    public readonly Animator: Animator.Animator;
+    public readonly Animator: Animator.StateAnimator;
 
     constructor()
     {
         super();
         const components = Dependency<Components>();
-        const currentAnimator = components.getComponent<Animator.Animator>(this.instance);
+        const currentAnimator = components.getComponent<Animator.StateAnimator>(this.instance);
         if (currentAnimator)
 
             this.Animator = currentAnimator
 
         else
 
-            this.Animator = components.addComponent<Animator.Animator>(this.instance);
+            this.Animator = components.addComponent<Animator.StateAnimator>(this.instance);
+
+        if (!this.CanBeModified())
+            
+            this.Animator.Pause();
     }
 
     onStart()
     {
         debug.profilebegin("Entity Initialization")
+        if (this.instance.Humanoid.HipHeight === 0)
+        {
+            if (this.Humanoid.RigType === Enum.HumanoidRigType.R15)
+
+                warn("Humanoid hip height is set to zero on an R15 rig. Unable to calculate estimated hip height. Please set this manually.\n Expect undefined behavior.");
+
+            else
+            {
+                warn("Humanoid hip height is set to zero on an R6 rig. Attempting to find correct hip height via legs. For better accuracy, try setting this manually.");
+
+                const char: ICharacterR6 = this.instance as never;
+                this.Humanoid.HipHeight = char["Left Leg"].Size.Y
+            }
+        }
+
         this.raycastParams.FilterType = Enum.RaycastFilterType.Exclude;
         this.raycastParams.AddToFilter([ this.instance, Workspace.CurrentCamera ?? this.instance ]);
 
@@ -89,7 +118,9 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
         this.AirController.BalanceRigidityEnabled = true;
         this.SwimController.BalanceRigidityEnabled = true;
 
-        this.GroundSensor.SearchDistance = this.Humanoid.HipHeight * 1
+        this.AirController.MoveMaxForce = 0;
+
+        this.GroundSensor.SearchDistance = this.Humanoid.HipHeight * 1.05;
         this.GroundSensor.UpdateType = Enum.SensorUpdateType.Manual;
         this.GroundSensor.SensorMode = Enum.SensorMode.Floor;
         this.GroundSensor.Name = "GroundSensor";
@@ -124,41 +155,50 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
 
     onRender()
     {
-        this.SenseGround();
+        // unsure if this can even run on the server
+        // or if it gets limited to the Heartbeat event,
+        // but i don't want to try it.
     }
 
 
     onTick() {
-        debug.profilebegin("Entity Management")
+        debug.profilebegin("Entity Management - Tick")
+        this.Humanoid.EvaluateStateMachine = false;
+        debug.profileend()
+    }
+
+    onPhysics()
+    {
+        debug.profilebegin("Entity Management - Physics")
+        /* keep collision logic on-tick */
+        if (this.CanBeModified())
+
+            this.SenseGround();
+
+
         let TotalMoveSpeedFactor = 1;
-        if ((this.attributes.EntityState & EntityState.Crouch) > 0) {
-            this.GroundController.GroundOffset = (this.Humanoid.HipHeight * 0.5) * this.GroundOffsetMultiplier;
-            TotalMoveSpeedFactor -= 0.60;
-        }
-        else {
-            this.GroundController.GroundOffset = this.Humanoid.HipHeight * this.GroundOffsetMultiplier;
-            if ((this.attributes.EntityState & EntityState.Walk) > 0)
+        if ((this.attributes.State & EntityState.Crouch) > 0) 
 
-                TotalMoveSpeedFactor -= 0.40;
-        }
+            TotalMoveSpeedFactor = 0;
 
-        if (this.GroundSensor.SensedPart)
+        else 
 
-            if ((this.attributes.EntityState & EntityState.Midair) === 0)
+            if ((this.attributes.State & EntityState.Sprint) > 0)
 
-                this.attributes.EntityState |= EntityState.Midair
+                TotalMoveSpeedFactor += 0.20;
 
-            else if ((this.attributes.EntityState & EntityState.Midair) > 0)
-
-                this.attributes.EntityState &= ~EntityState.Midair
-
-
-        if (RunService.IsServer())
-       
-            this.Humanoid.EvaluateStateMachine = false;
-
-        else       
+        if (this.CanBeModified())
         {
+            if (this.GroundSensor.SensedPart)
+            {
+                if ((this.attributes.State & EntityState.Midair) > 0)
+
+                    this.attributes.State &= ~EntityState.Midair
+
+            } else if ((this.attributes.State & EntityState.Midair) === 0)
+
+                this.attributes.State |= EntityState.Midair
+
             if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
             {
                 this.Humanoid.ChangeState(Enum.HumanoidStateType.Running);
@@ -166,6 +206,10 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
             }
             else if ((!this.GroundSensor.SensedPart && !this.AirController.Active) || this.Humanoid.GetState() === Enum.HumanoidStateType.Jumping)
             {
+                if (this.IsState(EntityState.Crouch))
+
+                    this.Crouch(false)
+
                 this.Humanoid.ChangeState(Enum.HumanoidStateType.Freefall);
                 this.ControllerManager.ActiveController = this.AirController;
             }
@@ -176,15 +220,23 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
         debug.profileend()
     }
 
-    public Crouch(crouchState: boolean = ((this.attributes.EntityState & EntityState.Crouch) > 0)) {
+    public Crouch(crouchState: boolean = ((this.attributes.State & EntityState.Crouch) > 0)) {
 
+        print("still dont nkow whats going ong");
         if (crouchState)
+        {
+            if (this.IsGrounded())
+            {
+                print("amma crouchin!");
+                this.attributes.State |= EntityState.Crouch;
+            }
 
-            this.attributes.EntityState |= EntityState.Crouch;
-
+        }
         else
-
-            this.attributes.EntityState &= ~EntityState.Crouch;
+        {
+            print("amma un-crouchin!");
+            this.attributes.State &= ~EntityState.Crouch;
+        }
     }
 
     public Jump() {
@@ -198,6 +250,11 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
 
         this.ControllerManager.ActiveController = this.AirController;
         this.GroundSensor.SensedPart?.ApplyImpulseAtPosition(jumpImpulse.mul(-1), this.GroundSensor.HitFrame.Position)
+    }
+
+    public CanBeModified()
+    {
+        return (RunService.IsServer() && this.attributes.IsServerEntity) || (RunService.IsClient() && !this.attributes.IsServerEntity)
     }
 
     private visL = new Visuals(BrickColor.random().Color);
@@ -232,6 +289,30 @@ export abstract class EntityBase<A extends EntityBaseAttributes = EntityBaseAttr
         this.GroundSensor.SensedPart = heightRaycast?.Instance;
         this.GroundSensor.HitFrame = CFrame.lookAlong(heightRaycast?.Position ?? Vector3.zero, down);
         this.GroundSensor.HitNormal = heightRaycast?.Normal ?? down;
+    }
+
+    public IsGrounded()
+    {
+        return !!this.GroundSensor.SensedPart
+    }
+
+    // TODO: Important - Fix bug where dot product in Facing is incorrect leading to blocks being non-functional
+    protected readonly facingLeniency = 0.725;
+    public IsFacing(origin: Vector3, leniency = this.facingLeniency)
+    {
+        const { LookVector: normalizedFacing, Position: normalizedPosition } = this.instance
+            .GetPivot()
+            .sub(new Vector3(0, this.instance.GetPivot().Y, 0));
+        const normalizedOrigin = origin.sub(new Vector3(0, origin.Y, 0));
+
+        const dotArg = normalizedPosition.sub(normalizedOrigin).Unit;
+        const dotProduct = normalizedFacing.Dot(dotArg);
+
+        return dotProduct <= this.facingLeniency;
+    }
+    public GetPrimaryPart()
+    {
+        return this.instance.PrimaryPart;
     }
 }
 
@@ -331,6 +412,15 @@ export interface EntityAttributes extends EntityBaseAttributes
      */
     BlockStun: number | -1;
     /**
+     * The amount of hit stun the Entity is in.
+     * This will constantly reduce by 1 every in-game
+     * tick (1/{@link SchedulerService.gameTickRate gameTickRate}).
+     *
+     * The Entity cannot make any inputs
+     * while this value is above 0.
+     */
+    HitStun: number | -1;
+    /**
      * The amount of invulnerability frames
      * the current Entity is in. In this state,
      * any hurtboxes present will not put the
@@ -400,26 +490,50 @@ export interface EntityAttributes extends EntityBaseAttributes
 
         IFrame: -1,
         BlockStun: -1,
+        HitStun: -1,
         HitStop: -1,
 
         EntityId: "generate",
         State: EntityState.Idle,
     },
 })
-export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, Managed<ICharacter>> implements OnStart, OnTick
+export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
     constructor()
     { super(); }
 
     onStart()
     {
-        const { EntityId } = this.attributes;
         this.attributes.EntityId = Identifier.GenerateComponentId(this, "EntityId");
+        super.onStart();
     }
 
     onTick()
     {
+        super.onTick();
+        if (this.attributes.HitStop > 0)
 
+            this.attributes.HitStop -= 1;
+
+        else if (this.IsState(EntityState.Hitstun))
+
+            this.RemoveState(EntityState.Hitstun);
+
+        if (this.attributes.BlockStun)
+
+            this.attributes.BlockStun -= 1;
+
+        this.PrintState()
+    }
+
+    public FacePosition(position?: Vector3)
+    {
+        this.ControllerManager.FacingDirection = CFrame.lookAt(this.instance.GetPivot().Position, position ?? Vector3.zero).LookVector;
+    }
+
+    public Face(direction?: Vector3)
+    {
+        this.ControllerManager.FacingDirection = direction ?? Vector3.zero;
     }
 
     public SetHitstop(hitstop: number)
@@ -431,6 +545,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     {
         this.attributes.HitStop = -1;
     }
+
     /**
      * Add block stun to the entity.
      * This does **not** set the block stun to the `blockStun` argument.
@@ -439,6 +554,19 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     public AddBlockStun(blockStun: number)
     {
         this.attributes.BlockStun += blockStun;
+    }
+
+    /**
+     * Set the entity's hit stun.
+     * @param hitStun The hit stun to give the Entity.
+     */
+    public SetHitStun(hitStun: number)
+    {
+        if (!this.IsState(EntityState.Hitstun) && hitStun > 0)
+
+            this.SetState(EntityState.Hitstun);
+
+        this.attributes.HitStun = hitStun;
     }
 
     /**
@@ -543,21 +671,6 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         return false;
     }
 
-    private readonly facingLeniency = 0.725;
-    // TODO: Important - Fix bug where dot product in Facing is incorrect leading to blocks being non-functional
-    public IsFacing(origin: Vector3, leniency = this.facingLeniency)
-    {
-        const { LookVector: normalizedFacing, Position: normalizedPosition } = this.instance
-            .GetPivot()
-            .sub(new Vector3(0, this.instance.GetPivot().Y, 0));
-        const normalizedOrigin = origin.sub(new Vector3(0, origin.Y, 0));
-
-        const dotArg = normalizedPosition.sub(normalizedOrigin).Unit;
-        const dotProduct = normalizedFacing.Dot(dotArg);
-
-        return dotProduct <= this.facingLeniency;
-    }
-
     public CanJump()
     {
         if (!this.IsNegative())
@@ -586,7 +699,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
     public IsNegative()
     {
-        return isStateNegative(this.GetState());
+        return isStateNegative(this.GetState()) || this.attributes.BlockStun > 0 || this.attributes.HitStun > 0;
     }
 
     public IsAttacked()
@@ -595,15 +708,5 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             EntityState.Hitstun,
             EntityState.Knockdown,
         );
-    }
-
-    public IsGrounded()
-    {
-        return !!this.GroundSensor.SensedPart
-    }
-
-    public GetPrimaryPart()
-    {
-        return this.instance.PrimaryPart;
     }
 }

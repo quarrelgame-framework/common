@@ -21,7 +21,7 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
 
     private stateEffects: Map<EntityState, (oldState: EntityState) => void> = new Map();
 
-    public readonly StateChanged = new Signal<(oldState: EntityState, newState: EntityState, wasForced?: boolean) => void>();
+    public readonly StateChanged = new Signal<(oldState: number, newState: number, wasForced?: boolean) => void>();
 
     onStart()
     {
@@ -41,49 +41,52 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
         this.stateEffects.set(state, effect);
     }
 
-    public SetStateGuard(state: EntityState, guard: () => boolean | void)
-    {
-        if (this.stateGuards.has(state))
-            warn(`StateGuard for state ${state} already exists (${guard}). Overwriting.`);
-
-        this.stateGuards.set(state, guard);
-    }
-
-    public RemoveStateGuard(state: EntityState)
-    {
-        this.stateGuards.delete(state);
-    }
-
-    private doStateFunctions(state: EntityState, force = false)
+    private doStateFunctions(state: number, force = false)
     {
         task.spawn(() => {
+            if (!this.IsState(state))
+
+                this.attributes.State |= state;
 
             this.StateChanged.Fire(this.GetState(), state, force);
-            this.attributes.State = state;
             this.stateEffects.get(state)?.(state);
         });
     }
 
     public SetState(state: EntityState): boolean
     {
-        if (state !== this.attributes.State)
+        if (!this.IsState(state))
         {
-            if (this.stateGuards.has(state))
-            {
-                if (!this.stateGuards.get(state)?.())
-                {
-                    print(`State guard failed: ${EntityState[state]}`);
-
-                    return false;
-                }
-            }
-
             this.ForceState(state);
             return true;
         }
 
         return false;
     }
+
+    public AddState(state: EntityState): boolean
+    {
+        return this.SetState(state);
+    }
+
+    public ClearState(state: EntityState)
+    {
+        if (this.IsState(state))
+        {
+            // TODO: maybe add support for leaving state effects? idk
+            this.attributes.State &= ~state;
+            return true;
+        }
+
+        return false;
+    }
+
+
+    public RemoveState(state: EntityState)
+    {
+        return this.ClearState(state);
+    }
+
     public ForceState(state: EntityState): void
     {
         this.doStateFunctions(state, true);
@@ -94,15 +97,22 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
         return this.attributes.State as EntityState;
     }
 
-    public IsState(...states: AttributeValue[]): boolean
+    /* Returns true if any of the states match with the current.*/
+    public IsState(...states: number[]): boolean
     {
-        return states.includes(this.attributes.State);
+        return states.some((e) => (e & this.attributes.State) > 1);
+    }
+
+    /* Returns true if all of the states match with the current.*/
+    public IsStateExclusive(...states: number[]): boolean
+    {
+        return states.every((e) => (e & this.attributes.State) > 1);
     }
 
     public IsDefaultState(): boolean
     {
         assert(this.defaultState !== undefined, `default state is undefined for instance ${this.instance.Name}`);
-        return this.attributes.State === this.defaultState
+        return (this.attributes.State === this.defaultState)
     }
 
     public SetDefaultState(state: EntityState)
@@ -116,30 +126,46 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
             this.SetState(this.defaultState);
     }
 
-    public WhileInState(time: number | undefined): Promise<void>
+    public WhileInState(time: number | undefined, state = this.attributes.State): Promise<void>
     {
         return new Promise((res, rej) => {
-            let state: 0 | 1 = 0;
             let r: RBXScriptConnection | void = this.StateChanged.Once((_, new_state) =>
             {
-                if (state === 0)
-                {
-                    state = 1;
-                    rej(new_state);
-                }
+                if ((state & new_state) > 0)
 
-                r = r?.Disconnect();
+                    return;
+
+                return rej(false);
             });
 
             task.delay(time ?? 0, () => {
-                if (state === 0)
-                {
-                    state = 1;
-                    res();
-                }
+                if ((state & this.GetState()) > 0)
 
-                r = r?.Disconnect();
+                    return res();
+
+                rej(false);
             });
         });
+    }
+
+    public PrintState(k: EntityState[] = [
+        // FIX: this ugly fucking thing
+        EntityState.Idle,
+        EntityState.Midair,
+        EntityState.Jumping,
+        EntityState.Dash,
+        EntityState.Walk,
+        EntityState.Crouch,
+        EntityState.Block,
+        EntityState.Attack,
+        EntityState.Sprint,
+        EntityState.Hitstun,
+        EntityState.Knockdown,
+        EntityState.Startup,
+        EntityState.Landing,
+        EntityState.Recovery,
+    ])
+    {
+        print(k.filter((e) => this.IsState(e)).reduce((a,e) => `${a}${EntityState[e]},`, '').sub(0,-2));
     }
 }
