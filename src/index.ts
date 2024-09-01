@@ -1,3 +1,6 @@
+export * from "singletons/metadata";
+export * from "singletons/scheduler";
+
 export * from "components/animator.component";
 export * from "components/new-entity.component";
 export * from "components/rotator.component";
