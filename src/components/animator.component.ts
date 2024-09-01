@@ -10,6 +10,7 @@ import Make from "@rbxts/make";
 import Signal from "@rbxts/signal";
 // import type { CharacterSelectController } from "@quarrelgame-framework/client";
 import {Character} from "util/character";
+import Object from "@rbxts/object-utils";
 // import type { QuarrelGame } from "@quarrelgame-framework/server";
 
 // FIXME:
@@ -19,6 +20,15 @@ import {Character} from "util/character";
 
 export namespace Animator
 {
+    const Characters = new Map<string, Character.Character>();
+    export function RegisterCharacters(characters: ReadonlyMap<string, Character.Character>)
+    {
+        for (const [id, character] of characters)
+
+            Characters.set(id, character);
+    }
+
+    
     interface AnimatorProps
     {
         ActiveAnimation?: string;
@@ -77,7 +87,7 @@ export namespace Animator
     {}
 
     @Component({})
-    export class StateAnimator extends Animator<StateAnimatorProps> implements OnStart, OnTick
+    export class StateAnimator extends Animator<StateAnimatorProps> implements OnStart 
     {
         private currentLoadedAnimation?: Animation.Animation;
 
@@ -94,22 +104,15 @@ export namespace Animator
             this.onAttributeChanged("State", (newState, oldState) => this.onStateChanged(newState));
         }
 
-        onTick(dt: number): void
-        {
-            if (this.paused)
-                print("paused...");
-        }
-
         private async onStateChanged(newState: AttributeValue)
         {
-            /* FIXME: uncomment after initial compilation */
-            /* FIXME: make this bound to characters instead of dependencies */
-            // const Characters = RunService.IsServer() ? Dependency<QuarrelGame>().characters : Dependency<CharacterSelectController>().characters;
-            const Characters = {} as Map<string, Character.Character>;
-
             const selectedCharacter = Characters.get(
                 this.instance.GetAttribute("CharacterId") as string,
             );
+
+            print(newState as number & EntityState.Midair)
+
+
             assert(
                 selectedCharacter,
                 `no selected character found on ${this.instance}`,
@@ -120,7 +123,15 @@ export namespace Animator
 
             if (typeIs(newState, "number"))
             {
-                if (newState in selectedCharacter.Animations)
+                const availableAnimationStates = Object.keys(selectedCharacter.Animations)
+                const playingAnimations = availableAnimationStates.filter((e) => (this.attributes.State & e) > 0).sort((a,b) =>
+                {
+                    const [c,d] = [selectedCharacter.Animations[a]!, selectedCharacter.Animations[b]!];
+    
+                    return (c.priority ?? Enum.AnimationPriority.Idle).Value < (d.priority ?? Enum.AnimationPriority.Idle).Value;
+                });
+
+                for (const newState of playingAnimations)
                 {
                     const newLoadedAnimation = this.LoadAnimation(
                         selectedCharacter.Animations[
@@ -165,7 +176,7 @@ export namespace Animator
                         }
                     }
 
-                    const isBecomingNeutralish = [ EntityState.Idle, EntityState.Crouch ].includes(newState);
+                    const isBecomingNeutralish = [ EntityState.Idle, EntityState.Crouch ].some((v) => (v & newState) > 1);
 
                     this.currentLoadedAnimation = newLoadedAnimation;
                     this.currentLoadedAnimation.Play({
