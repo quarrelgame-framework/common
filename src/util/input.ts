@@ -151,32 +151,55 @@ function temporarySwap(array: unknown[])
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (Motion | Input)[], character: Character.Character, minHeat: number = 2): Skill.Skill[] | undefined
+export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0): (readonly [MotionInput, Skill.Skill | (() => Skill.Skill)])[]
 {
-    const { Skills } = character;
-    const reversedInput = temporarySwap(input);
-
-    const filteredSkills = [ ...Skills ].mapFiltered((skill) =>
+    const currentMotion = [ ...input ];
+    const decompiledAttacks = [...character.Attacks]
+    const matchingAttacks = decompiledAttacks.filter(([motionInput]) => 
     {
-        const { MotionInput } = skill;
-        const reversedMotion = temporarySwap([ ...MotionInput ]);
-
-        let heat = 0;
-        for (const [ i, input ] of pairs(reversedInput))
+        let motionSet: MotionInput;
+        if ( motionInput.includes(Motion.Neutral) ) 
         {
-            // print("!!", reversedMotion[i - 1], input, reversedMotion.size(), "/", reversedInput.size());
-            if (reversedMotion[i - 1] === input)
-                heat++;
+            const set = [ ... currentMotion ];
+            if (set[0] !== Motion.Neutral)
+
+                set.unshift(Motion.Neutral); // make sure the motion starts with 5 if it doesn't already
+
+            motionSet = set.filter((e, k, a) => !(a[k - 1] === Motion.Neutral && e === Motion.Neutral)); // remove duplicates
         }
+        else
 
-        if (heat >= minHeat)
-            return [ heat, skill ] as const;
+            motionSet = currentMotion.filter((e) => e !== Motion.Neutral); // filter all neutrals 
 
-        return undefined;
+        if (motionSet.size() < motionInput.size())
+
+            return;
+
+             
+        if (motionSet.size() === 0)
+
+            return;
+
+        for (let i = motionInput.size() - 1; i >= 0; i--)
+
+            if (motionInput[i] !== motionSet[motionSet.size() - (motionInput.size() - i)])
+
+                // print(`motion failed: ${motionInput[i]} !== ${motionSet[i]}`);
+                return false;
+
+
+        // print(`motion passed: ${this.stringifyMotionInput(motionInput)} === ${this.stringifyMotionInput(motionSet)}`);
+        return true;
     });
 
-    return filteredSkills.size() > 0 ? filteredSkills.map(([ , skill ]) => skill) : undefined;
+    return matchingAttacks.filter((e) => typeIs(e[1], "function") ? e[1]().GaugeRequired <= maxHeat : e[1].GaugeRequired <= maxHeat);
 }
+
+export function stringifyMotionInput(motionInput: MotionInput)
+{
+    return motionInput.size() > 0 ? motionInput.map(tostring).reduce((acc, v) => `${acc}, ${v}`) : ""
+}
+
 
 export const isCommandNormal = (attack: unknown[]): attack is [Motion, Input] => !!(Motion[attack[0] as Motion] && Input[attack[1] as never]) && attack.size() === 2;
 export function isInput(input: unknown): input is Input
