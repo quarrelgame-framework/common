@@ -2,7 +2,7 @@ import { Dependency } from "@flamework/core";
 import { Players, ReplicatedStorage, RunService } from "@rbxts/services";
 import { QuarrelFunctions } from "network";
 
-import type { Entity, EntityAttributes } from "components/new-entity.component";
+import type { Entity, EntityAttributes } from "components/entity.component";
 import type MapNamespace from "components/map.component";
 import type Character from "util/character";
 

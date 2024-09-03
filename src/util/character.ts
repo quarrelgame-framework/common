@@ -1,4 +1,4 @@
-// import type * as Entity from "components/new-entity.component";
+// import type * as Entity from "components/entity.component";
 // import type { Combat } from "singletons/combat.service";
 // import type { Scheduler } from "singletons/scheduler";
 import type { Animator } from "components/animator.component";
@@ -6,7 +6,7 @@ import { Animation } from "util/animation";
 import { EntityState, HitboxRegion, HitData, HitResult } from "util/lib";
 
 import { Hitbox } from "util/hitbox";
-import { Entity, EntityAttributes } from "components/new-entity.component";
+import { Entity, EntityAttributes } from "components/entity.component";
 import { Input, isInput, Motion, MotionInput } from "./input";
 
 import { Dependency } from "@flamework/core";

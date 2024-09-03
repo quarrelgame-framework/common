@@ -1,4 +1,4 @@
-import type { Entity } from "components/new-entity.component";
+import type { Entity } from "components/entity.component";
 
 class Dogtag
 {

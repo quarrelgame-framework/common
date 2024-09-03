@@ -8,7 +8,7 @@ import { Skill } from "util/character";
 import Make from "@rbxts/make";
 import Signal from "@rbxts/signal";
 // import type { QuarrelGame } from "@quarrelgame-framework/server";
-import type * as Entity from "components/new-entity.component";
+import type * as Entity from "components/entity.component";
 import * as lib from "util/lib";
 export interface OnHit
 {
