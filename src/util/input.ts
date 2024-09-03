@@ -116,6 +116,11 @@ export function ConvertMoveDirectionToMotion(moveDirection: Vector3): readonly [
     return closest as never;
 }
 
+export function ClampDirectionToMotions(direction: Vector3, ...motions: Motion[])
+{
+    return motions.map(ConvertMotionToMoveDirection).filter((e) => e.Magnitude > 0 && math.sign(e.Dot(direction)) > 0);
+}
+
 export function ConvertMotionToMoveDirection(motion: Motion): Vector3
 {
     for (const [ moveDirection, value ] of rawDirectionMap)
