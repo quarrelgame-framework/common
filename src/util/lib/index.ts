@@ -427,7 +427,7 @@ export enum BlockMode
     Orientation,
 }
 
-export function isStateNegative(state: EntityState)
+export function isStateNegative(state: number)
 {
     return [
         EntityState.Startup,
@@ -441,12 +441,12 @@ export function isStateNegative(state: EntityState)
     ].some((v) => (state & v) > 0);
 }
 
-export function isStateCounterable(state: EntityState)
+export function isStateCounterable(state: number)
 {
     return [ EntityState.Startup, EntityState.Attack ].some((v) => (state & v) > 0);
 }
 
-export function isStateAggressive(state: EntityState)
+export function isStateAggressive(state: number)
 {
     return [
         EntityState.Startup,
@@ -455,7 +455,7 @@ export function isStateAggressive(state: EntityState)
     ].some((v) => (state & v) > 0);
 }
 
-export function isStateNeutral(state: EntityState)
+export function isStateNeutral(state: number)
 {
     return [
         EntityState.Idle,
@@ -543,6 +543,7 @@ export function NullifyYComponent(
 {
     return (typeIs(item, "CFrame") ? new CFrame(item.Position.mul(new Vector3(1, 0, 1))).mul(item.Rotation) : item.mul(new Vector3(1, 0, 1)));
 }
+
 
 export { getEnumValues } from "util/lib/other/enum";
 export type ForChild<A extends {}, T extends keyof A = keyof A> = (child: T) => A[T] extends Instance ? A[T] : never;
