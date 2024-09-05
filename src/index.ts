@@ -1,4 +1,6 @@
+export * from "decorators/character";
 export * from "singletons/metadata";
+export * from "singletons/character";
 export * from "singletons/scheduler";
 
 export * from "components/animator.component";

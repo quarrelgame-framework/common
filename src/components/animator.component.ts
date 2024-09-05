@@ -1,17 +1,13 @@
 import { BaseComponent, Component } from "@flamework/components";
-import { Dependency, OnStart, OnTick } from "@flamework/core";
+import { OnStart } from "@flamework/core";
 
-import { HttpService, Players, RunService } from "@rbxts/services";
 import { Animation } from "util/animation";
 import { EntityState } from "util/lib";
-import { StateAttributes } from "./state.component";
+import { StateAttributes } from "components/state.component";
 
-import Make from "@rbxts/make";
+import CharacterManager from "singletons/character";
 import Signal from "@rbxts/signal";
-// import type { CharacterSelectController } from "@quarrelgame-framework/client";
-import {Character} from "util/character";
 import Object from "@rbxts/object-utils";
-// import type { QuarrelGame } from "@quarrelgame-framework/server";
 
 // FIXME:
 // Fix bug that makes the character pause
@@ -20,15 +16,6 @@ import Object from "@rbxts/object-utils";
 
 export namespace Animator
 {
-    const Characters = new Map<string, Character.Character>();
-    export function RegisterCharacters(characters: ReadonlyMap<string, Character.Character>)
-    {
-        for (const [id, character] of characters)
-
-            Characters.set(id, character);
-    }
-
-    
     interface AnimatorProps
     {
         ActiveAnimation?: string;
@@ -91,6 +78,11 @@ export namespace Animator
     {
         private currentLoadedAnimation?: Animation.Animation;
 
+        constructor(protected CharacterManager: CharacterManager)
+        {
+            super();
+        };
+
         onStart(): void
         {
             while (!this.instance.Parent)
@@ -106,12 +98,9 @@ export namespace Animator
 
         private async onStateChanged(newState: AttributeValue)
         {
-            const selectedCharacter = Characters.get(
+            const selectedCharacter = this.CharacterManager.GetCharacter(
                 this.instance.GetAttribute("CharacterId") as string,
             );
-
-            print(newState as number & EntityState.Midair)
-
 
             assert(
                 selectedCharacter,
@@ -178,9 +167,10 @@ export namespace Animator
 
                     const isBecomingNeutralish = [ EntityState.Idle, EntityState.Crouch ].some((v) => (v & newState) > 1);
 
+                    // isBecomingNeutralish ? 0 : (animationWasInterrupted ? 0 : undefined),
                     this.currentLoadedAnimation = newLoadedAnimation;
                     this.currentLoadedAnimation.Play({
-                        FadeTime: isBecomingNeutralish ? 0 : (animationWasInterrupted ? 0 : undefined),
+                        FadeTime: 0,
                     }).then(() => print("oh yeah we playing"));
                 }
             }

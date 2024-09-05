@@ -2,7 +2,6 @@
 import { BaseComponent, Component, Components } from "@flamework/components";
 import { Dependency, OnStart } from "@flamework/core";
 import Make from "@rbxts/make";
-// import { QuarrelGame } from "@quarrelgame-framework/server";
 import { Entity } from "components/entity.component";
 import { Identifier } from "util/identifier";
 import { Model } from "util/model";
