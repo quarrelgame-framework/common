@@ -9,6 +9,8 @@ import type { ICharacter, ICharacterR6 } from "@quarrelgame-framework/types";
 
 import Visuals from "util/CastVisuals";
 import { Animator } from "./animator.component";
+import { Debug } from "decorators/debug";
+import { Skill } from "util/character";
 
 enum RotationMode
 {
@@ -55,7 +57,8 @@ export const EntityBaseDefaults = {
 @Component({
     defaults: EntityBaseDefaults
 })
-export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics {
+export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics 
+{
     public readonly ControllerManager = Fetcher(this.instance.Humanoid, "ControllerManager", "ControllerManager")
     public readonly GroundSensor = Fetcher(this.instance.HumanoidRootPart, "GroundSensor", "ControllerPartSensor", true)
     public readonly ClimbSensor = Fetcher(this.instance.HumanoidRootPart, "ClimbSensor", "ControllerPartSensor", true);
@@ -521,6 +524,7 @@ export interface EntityAttributes extends EntityBaseAttributes
         State: EntityState.Idle,
     },
 })
+@Debug(["AirJumps", "AirOptions", "AirDashes", "EntityId"], (() => RunService.IsClient()))
 export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
     constructor()
@@ -544,6 +548,18 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     onTick()
     {
         super.onTick();
+        if (this.CanBeModified())
+        {
+            if (this.IsAttacking())
+            {
+                this.ControllerManager.BaseMoveSpeed = 0;
+                print("no move")
+            }
+            else 
+
+                this.ControllerManager.BaseMoveSpeed = this.attributes.WalkSpeed;
+        }
+
         if (this.attributes.HitStop > 0)
 
             this.attributes.HitStop -= 1;
@@ -555,6 +571,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         if (this.attributes.BlockStun)
 
             this.attributes.BlockStun -= 1;
+
     }
 
     public FacePosition(position?: Vector3)
@@ -632,6 +649,20 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             if (!this.attributes.Counter)
                 this.attributes.Counter = fromEntity.attributes.EntityId;
         }
+    }
+
+    /**
+     * Execute a skill.
+     *
+     */
+    public async ExecuteSkill(skillId: (Skill.Skill["Id"])[]): Promise<boolean>
+    {
+        // for (const skills of Characters.get(""))
+        // {
+        //
+        // }
+        //
+        return true;
     }
 
     /**

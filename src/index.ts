@@ -1,4 +1,7 @@
+export * from "decorators/debug";
 export * from "decorators/character";
+
+export * from "singletons/debug";
 export * from "singletons/metadata";
 export * from "singletons/character";
 export * from "singletons/scheduler";
