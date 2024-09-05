@@ -1,3 +1,4 @@
+import { Entity } from "components/entity.component";
 import Character, { Skill } from "util/character";
 
 /**
@@ -156,7 +157,7 @@ function temporarySwap(array: unknown[])
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0): (readonly [MotionInput, Skill.Skill | (() => Skill.Skill)])[]
+export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0): (readonly [MotionInput, Skill.Skill | ((entity: Entity) => Skill.Skill)])[]
 {
     const currentMotion = [ ...input ];
     const decompiledAttacks = [...character.Attacks]

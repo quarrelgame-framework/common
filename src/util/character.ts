@@ -9,7 +9,7 @@ import { Hitbox } from "util/hitbox";
 import { Entity, EntityAttributes } from "components/entity.component";
 import { Input, isInput, Motion, MotionInput } from "./input";
 
-import { Dependency } from "@flamework/core";
+import { Dependency, Modding } from "@flamework/core";
 import { CharacterRigR6 as CharacterRigR6_ } from "@rbxts/promise-character";
 import { HttpService, ReplicatedStorage, RunService } from "@rbxts/services";
 import { Identifier } from "./identifier";
@@ -23,9 +23,9 @@ type SkillName = string;
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Character
 {
-    export const MaximumEaseOfUse = 5;
-
     type EaseOfUse = 1 | 2 | 3 | 4 | 5;
+
+    export const MaximumEaseOfUse = 5;
 
     export type CharacterRig = CharacterRigR6_ & { PrimaryPart: BasePart; Humanoid: CharacterRigR6_["Humanoid"] & { Animator: Animator; }; };
 
@@ -470,7 +470,7 @@ export namespace Skill
 
              print("prev entity state:", previousEntityState);
              this.AttackSetup?.(entity);
-             assert(RunService.IsServer(), "Function is to be run on the server.");
+             // assert(RunService.IsServer(), "Function is to be run on the server.");
              assert(this.Animation, "Builder incomplete! Animation not defined.");
 
              const animatorAnimation = Animator.LoadAnimation(this.Animation);
@@ -487,7 +487,6 @@ export namespace Skill
              }
 
              entity.attributes.PreviousSkill = skill.Id;
-
              return new Promise((res) =>
              {
                  const playAnimation = async () =>
@@ -502,14 +501,14 @@ export namespace Skill
                                  await schedulerService.WaitForNextTick();
                          };
 
-                         return Promise.any([ waiter(), Promise.fromEvent(animatorAnimation.Ended) ]);
+                         return waiter(); //Promise.any([ waiter(), Promise.fromEvent(animatorAnimation.Ended) ]);
                      };
 
                      if (this.StartupFrames > 0)
                      {
                          entity.SetState(EntityState.Startup);
                          await waitFrames(this.StartupFrames);
-                         entity.RemoveState(EntityState.Startup);
+                         entity.ClearState(EntityState.Startup);
                      }
 
                      let attackDidLand = HitResult.Whiffed;
@@ -1102,5 +1101,21 @@ export namespace Skill
          }
      }
  }
+
+export function validateGroundedState(skill: Skill.Skill | ((entity: Entity) => Skill.Skill), character: Entity)
+{
+    const outSkill = typeIs(skill, "function") ? skill(character) : skill;
+    switch (outSkill.GroundedType)
+    {
+        case Skill.SkillGroundedType.AirOnly:
+            return !character.IsGrounded();
+        
+        case Skill.SkillGroundedType.AirOk:
+            return true;
+        
+        default:
+            return character.IsGrounded();
+    }
+}
 
 export default Character;
