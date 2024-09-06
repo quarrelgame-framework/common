@@ -1,4 +1,5 @@
 export * from "decorators/debug";
+export * from "decorators/skill";
 export * from "decorators/character";
 
 export * from "singletons/debug";

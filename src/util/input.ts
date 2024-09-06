@@ -1,5 +1,5 @@
 import { Entity } from "components/entity.component";
-import Character, { Skill } from "util/character";
+import Character, { Skill, SkillLike } from "util/character";
 
 /**
  * The medium the User is using
@@ -157,10 +157,10 @@ function temporarySwap(array: unknown[])
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0): (readonly [MotionInput, Skill.Skill | ((entity: Entity) => Skill.Skill)])[]
+export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
 {
     const currentMotion = [ ...input ];
-    const decompiledAttacks = [...character.Attacks]
+    const decompiledAttacks = [...character.Skills]
     const matchingAttacks = decompiledAttacks.filter(([motionInput]) => 
     {
         let motionSet: MotionInput;
@@ -198,7 +198,8 @@ export function validateMotion(input: (Motion | Input)[], character: Character.C
         return true;
     });
 
-    return matchingAttacks.filter((e) => typeIs(e[1], "function") ? e[1]().GaugeRequired <= maxHeat : e[1].GaugeRequired <= maxHeat);
+    const [entity, entities] = skillFetcherArguments ?? [];
+    return matchingAttacks.filter((e) => typeIs(e[1], "function") ? e[1](entity, entities ? new Set(entities) : undefined).GaugeRequired <= maxHeat : e[1].GaugeRequired <= maxHeat);
 }
 
 export function stringifyMotionInput(motionInput: MotionInput)

@@ -19,6 +19,7 @@ import { SchedulerService } from "singletons/scheduler";
 
 
 type SkillName = string;
+export type SkillLike = Skill.Skill | ((castingEntity?: Entity, targetEntities?: Set<Entity>) => Skill.Skill)
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Character
@@ -51,6 +52,7 @@ export namespace Character
                 return characterModels[index as never] as unknown as Character.CharacterRig;
             },
         })) as CharacterModels;
+
     export enum Archetype
     {
         WellRounded = "Well-Rounded",
@@ -66,35 +68,34 @@ export namespace Character
 
     interface CharacterProps
     {
-        name: string;
+        Name: string;
 
-        description: string;
+        Description: string;
 
-        easeOfUse: EaseOfUse;
+        EaseOfUse: EaseOfUse;
 
-        characterModel: Model & { PrimaryPart: BasePart; Humanoid: Humanoid & { Animator?: Animator; }; };
+        CharacterModel: Model & { PrimaryPart: BasePart; Humanoid: Humanoid & { Animator?: Animator; }; };
 
-        rigType: CharacterRigType;
+        RigType: CharacterRigType;
 
-        skills: Set<Skill.Skill>;
+        Animations: Animations;
 
-        animations: Animations;
+        CharacterArchetype: Archetype;
 
-        characterArchetype: Archetype;
+        CharacterHeader?: string;
 
-        characterHeader?: string;
+        CharacterSubheader?: string;
 
-        characterSubheader?: string;
+        MaximumAirOptions: number;
 
-        maximumAirOptions: number;
+        MaximumAirDashes: number;
 
-        maximumAirDashes: number;
-
-        maximumAirJumps: number;
+        MaximumAirJumps: number;
         
-        eightWayDash: boolean;
+        EightWayDash: boolean;
 
-        attacks: Map<MotionInput, Skill.Skill | (() => Skill.Skill)>;
+
+        Skills: Map<MotionInput, SkillLike>
     }
 
     export enum CharacterEvent
@@ -160,166 +161,161 @@ export namespace Character
 
         readonly Model: Model & { PrimaryPart: BasePart; Humanoid: Humanoid & { Animator?: Animator; }; };
 
-        readonly Skills: ReadonlySet<Skill.Skill>;
+        readonly Skills: CharacterProps["Skills"] = new Map();
 
         readonly Archetype: Archetype;
 
         readonly Animations: Animations;
 
-        readonly Attacks: ReadonlyMap<MotionInput, Skill.Skill | (() => Skill.Skill)>;
-
         readonly RigType: CharacterRigType;
 
-        constructor({
-            name,
-            description,
-            easeOfUse,
-            characterModel,
-            skills,
-            animations,
-            attacks,
-            characterHeader,
-            characterSubheader,
-            rigType,
-            characterArchetype: characterArchetype,
-        }: CharacterProps)
+
+        constructor(destructorParams: CharacterProps)
         {
-            this.Name = name;
-            this.Description = description;
-            this.EaseOfUse = easeOfUse;
-            this.Model = characterModel;
-            this.Skills = skills;
-            this.Animations = animations;
-            this.Archetype = characterArchetype;
-            this.Header = characterHeader;
-            this.Subheader = characterSubheader;
-            this.Attacks = attacks;
-            this.RigType = rigType;
+            const {
+                Name,
+                Description,
+                EaseOfUse,
+                CharacterModel,
+                Animations,
+                Skills,
+                CharacterHeader,
+                CharacterSubheader,
+                RigType,
+                CharacterArchetype,
+            } = destructorParams ?? this;
+
+            this.Name = Name;
+            this.Description = Description;
+            this.EaseOfUse = EaseOfUse;
+            this.Model = CharacterModel;
+            this.Skills = Skills;
+            this.Animations = Animations;
+            this.Archetype = CharacterArchetype;
+            this.Header = CharacterHeader;
+            this.Subheader = CharacterSubheader;
+            this.RigType = RigType;
         }
     }
 
     abstract class CharacterBuilder
     {
-        protected name?: string;
+        protected Name?: string;
 
-        protected description?: string;
+        protected Description?: string;
 
-        protected easeOfUse?: EaseOfUse;
+        protected EaseOfUse?: EaseOfUse;
 
-        protected characterModel?: CharacterProps["characterModel"];
+        protected CharacterModel?: CharacterProps["CharacterModel"];
 
-        protected skills: Set<Skill.Skill> = new Set();
+        protected Animations: Animations = {};
 
-        protected animations: Animations = {};
+        protected RigType: CharacterRigType = CharacterRigType.HumanoidDescription;
 
-        protected rigType: CharacterRigType = CharacterRigType.HumanoidDescription;
+        protected Skills: CharacterProps["Skills"] = new Map();
 
-        protected attacks: CharacterProps["attacks"] = new Map();
+        protected CharacterArchetype: Archetype = Archetype.WellRounded;
 
-        protected characterArchetype: Archetype = Archetype.WellRounded;
+        protected CharacterHeader?: string;
 
-        protected characterHeader?: string;
+        protected CharacterSubheader?: string;
 
-        protected characterSubheader?: string;
+        protected MaximumAirOptions?: number;
 
-        protected maximumAirOptions?: number;
+        protected MaximumAirDashes?: number;
 
-        protected maximumAirDashes?: number;
+        protected MaximumAirJumps?: number;
 
-        protected maximumAirJumps?: number;
+        protected EightWayDash?: boolean;
 
-        protected eightWayDash?: boolean;
 
         public SetName(name: string)
         {
-            this.name = name;
+            this.Name = name;
 
             return this;
         }
 
         public SetHeader(header: string)
         {
-            this.characterHeader = header;
+            this.CharacterHeader = header;
 
             return this;
         }
 
         public SetSubheader(subheader: string)
         {
-            this.characterSubheader = subheader;
+            this.CharacterSubheader = subheader;
 
             return this;
         }
 
         public SetDescription(description: string)
         {
-            this.description = description;
+            this.Description = description;
 
             return this;
         }
 
         public SetEasiness(easeOfUse: EaseOfUse)
         {
-            this.easeOfUse = easeOfUse;
+            this.EaseOfUse = easeOfUse;
 
             return this;
         }
 
-        public SetModel(characterModel: CharacterProps["characterModel"], rigType = CharacterRigType.HumanoidDescription)
+        public SetModel(characterModel: CharacterProps["CharacterModel"], rigType = CharacterRigType.HumanoidDescription)
         {
-            this.characterModel = characterModel;
-            this.rigType = rigType;
+            this.CharacterModel = characterModel;
+            this.RigType = rigType;
 
             return this;
         }
 
-        public AddSkill(skill: Skill.Skill)
+        public SetSkill(input: Input | MotionInput, skill: SkillLike)
         {
-            this.skills.add(skill);
+            this.Skills.set(isInput(input) ? [ input ] : input, skill);
 
             return this;
         }
 
-        public SetAttack(input: Input | MotionInput, skill: Skill.Skill | (() => Skill.Skill))
+        public SetAnimation(animationId: keyof typeof this.Animations, animationData: Animation.AnimationData)
         {
-            this.attacks.set(isInput(input) ? [ input ] : input, skill);
+            this.Animations[animationId] = animationData;
 
             return this;
         }
-
-        public SetAnimation(animationId: keyof typeof this.animations, animationData: Animation.AnimationData)
+        
+        public SetSetup(setupFunction: CharacterProps["Setup"])
         {
-            this.animations[animationId] = animationData;
-
-            return this;
+            this.Setup = setupFunction;
         }
 
         public Compile(): CharacterProps
         {
             // eslint-disable-next-line max-len
-            const { name, description, easeOfUse, characterModel, skills, rigType, attacks, animations, characterArchetype, characterHeader, characterSubheader, maximumAirOptions, maximumAirJumps, maximumAirDashes, eightWayDash = false } =
+            const { Name, Description, EaseOfUse, CharacterModel, RigType, Skills, Animations, CharacterArchetype, CharacterHeader, CharacterSubheader, MaximumAirOptions, MaximumAirJumps, MaximumAirDashes, EightWayDash = false } =
                 this;
-            assert(characterModel, "Builder incomplete! Character model is unset.");
-            assert(name, "Builder incomplete! Name is unset.");
-            assert(description, "Builder incomplete! Description is unset.");
-            assert(easeOfUse, "Builder incomplete! Ease of use is unset.");
 
+            assert(CharacterModel, "Builder incomplete! Character model is unset.");
+            assert(Name, "Builder incomplete! Name is unset.");
+            assert(Description, "Builder incomplete! Description is unset.");
+            assert(EaseOfUse, "Builder incomplete! Ease of use is unset.");
             return {
-                name,
-                description,
-                easeOfUse,
-                characterModel,
-                skills,
-                attacks,
-                animations,
-                characterArchetype,
-                characterHeader,
-                characterSubheader,
-                maximumAirOptions: maximumAirOptions ?? 2,
-                maximumAirJumps: maximumAirJumps ?? 1,
-                maximumAirDashes: maximumAirDashes ?? 1,
-                eightWayDash,
-                rigType,
+                Name,
+                Description,
+                EaseOfUse,
+                CharacterModel,
+                Skills,
+                Animations,
+                CharacterArchetype,
+                CharacterHeader,
+                CharacterSubheader,
+                MaximumAirOptions: MaximumAirOptions ?? 2,
+                MaximumAirJumps: MaximumAirJumps ?? 1,
+                MaximumAirDashes: MaximumAirDashes ?? 1,
+                EightWayDash,
+                RigType,
             };
         }
 
@@ -359,7 +355,7 @@ export namespace Skill
      * and then use Dependency<T>() to get the singleton
      */
     interface FrameDataClassProps
-     {
+    {
          Startup: number;
 
          Active: number;
@@ -798,45 +794,46 @@ export namespace Skill
 
     interface SkillClassProps
      {
-         name: string;
+         Name: string;
 
-         description: string;
+         Description: string;
 
-         frameData: FrameData;
+         FrameData: FrameData;
 
-         groundedType: SkillGroundedType;
+         GroundedType: SkillGroundedType;
 
-         motionInput: MotionInput;
+         IsReversal: boolean;
 
-         isReversal: boolean;
+         CanCounter: boolean;
 
-         canCounterHit: boolean;
+         GaugeRequired: number;
 
-         gaugeRequired: number;
+         Gatlings: Array<[MotionInput, SkillLike]>;
 
-         gatlings: Set<(Skill.Skill | SkillName)>;
+         SkillType: SkillType;
 
-         skillType: SkillType;
      }
 
      /**
       * A readonly Class of {@link SkillClassProps}.
       */
     export class Skill
-     {
+    {
          constructor(
-             { name, description, frameData, groundedType, motionInput, isReversal, canCounterHit, gaugeRequired, skillType }: SkillClassProps,
+             destructorParams: SkillClassProps
          )
          {
-             this.Name = name;
-             this.Description = description;
-             this.FrameData = frameData;
-             this.GroundedType = groundedType;
-             this.MotionInput = motionInput;
-             this.IsReversal = isReversal;
-             this.CanCounter = canCounterHit;
-             this.GaugeRequired = gaugeRequired;
-             this.Type = skillType;
+             
+             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounter, GaugeRequired, SkillType, LinksInto } = destructorParams ?? this;
+
+             this.Name = Name;
+             this.Description = Description;
+             this.FrameData = FrameData;
+             this.GroundedType = GroundedType;
+             this.IsReversal = IsReversal;
+             this.CanCounter = CanCounter;
+             this.GaugeRequired = GaugeRequired;
+             this.Type = SkillType;
 
              allCachedSkills.set(this.Id, this);
          }
@@ -868,10 +865,6 @@ export namespace Skill
           */
          public readonly FrameData: FrameData;
 
-         /**
-          * The motion input of the skill.
-          */
-         public readonly MotionInput: MotionInput;
 
          /**
           * Whether the skill is invulnerable
@@ -921,6 +914,7 @@ export namespace Skill
              return this;
          }
      }
+    }
 
     export enum SkillGroundedType
      {
@@ -932,35 +926,34 @@ export namespace Skill
     export enum SkillType
      {
          Normal,
-         CommandNormal,
-
+         Special,
          Super,
      }
 
     export class SkillBuilder
-     {
-         constructor(public readonly skillType: SkillType = SkillType.Normal)
+    {
+         constructor(public readonly _SkillType: SkillType = SkillType.Normal)
          {}
 
-         private name?: string;
+         private Name?: string;
 
-         private description?: string = "";
+         private Description?: string = "";
 
-         private frameData?: FrameData;
+         private FrameData?: FrameData;
 
-         private groundedType: SkillGroundedType = SkillGroundedType.Ground;
+         private GroundedType: SkillGroundedType = SkillGroundedType.Ground;
 
-         private motionInput: MotionInput = [];
+         private IsReversal = false;
 
-         private isReversal = false;
+         private CanCounterHit = true;
 
-         private canCounterHit = true;
+         private Gatlings: SkillClassProps["Gatlings"] = [];
 
-         private gatlings: Set<Skill> = new Set();
+         private GaugeRequired = 0;
+         
+         private LinksInto?: SkillLike;
 
-         private gaugeRequired = 0;
-
-         private followUps: Map<Input, Skill> = new Map();
+         private followUps: Map<Input, SkillLike> = new Map();
 
          /**
           * Set the skill name.
@@ -968,7 +961,7 @@ export namespace Skill
           */
          public SetName(name: string)
          {
-             this.name = name;
+             this.Name = name;
 
              return this;
          }
@@ -979,7 +972,7 @@ export namespace Skill
           */
          public SetDescription(description: string)
          {
-             this.description = description;
+             this.Description = description;
 
              return this;
          }
@@ -997,9 +990,9 @@ export namespace Skill
          public SetFrameData(frameData: FrameData | FrameDataBuilder)
          {
              if ("SetStartup" in frameData)
-                 this.frameData = frameData.Construct();
+                 this.FrameData = frameData.Construct();
              else
-                 this.frameData = frameData;
+                 this.FrameData = frameData;
 
              return this;
          }
@@ -1010,7 +1003,7 @@ export namespace Skill
           */
          public SetGroundedType(groundedType: SkillGroundedType = SkillGroundedType.Ground)
          {
-             this.groundedType = groundedType;
+             this.GroundedType = groundedType;
 
              return this;
          }
@@ -1020,10 +1013,10 @@ export namespace Skill
           * @param input The input required to follow-up.
           * @param skill The skill to execute on follow-up.
           */
-         public SetFollowUp(input: Input, skill: Skill)
+         public SetFollowUp(input: Input, skill: SkillLike)
          {
              if (this.followUps.has(input))
-                 warn(`Skill ${this.name} already has a follow up input (${input}). Overwriting.`);
+                 warn(`Skill ${this.Name} already has a follow up input (${input}). Overwriting.`);
 
              this.followUps.set(input, skill);
 
@@ -1036,7 +1029,7 @@ export namespace Skill
           */
          public CanCounter(canCounter = true)
          {
-             this.canCounterHit = canCounter;
+             this.CanCounterHit = canCounter;
 
              return this;
          }
@@ -1047,18 +1040,7 @@ export namespace Skill
           */
          public SetReversal(isReversal = false)
          {
-             this.isReversal = isReversal;
-
-             return this;
-         }
-
-         /**
-          * Set the skill's motion input.
-          * @param motionInput The motion input required to execute the Skill.
-          */
-         public SetMotionInput(motionInput: MotionInput = [])
-         {
-             this.motionInput = motionInput;
+             this.IsReversal = isReversal;
 
              return this;
          }
@@ -1069,7 +1051,21 @@ export namespace Skill
           */
          public SetGaugeRequired(gaugeRequired: number)
          {
-             this.gaugeRequired = gaugeRequired;
+             this.GaugeRequired = gaugeRequired;
+
+             return this;
+         }
+
+
+         /**
+          * Set whether this skill can be executed during the
+          * previous skill's recovery phase, provided said 
+          * previous skill has made contact with an entity.
+          * @param skill The potential follow-up skill.
+          */
+         public CanGatlingInto(motion: MotionInput, skill: Skill.Skill)
+         {
+             this.Gatlings.push([motion, skill])
 
              return this;
          }

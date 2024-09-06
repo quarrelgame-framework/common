@@ -298,6 +298,7 @@ export namespace Animation
             return this;
         }
     }
+
     export class AnimationBuilder
     {
         private assetId?: string;
