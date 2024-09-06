@@ -180,13 +180,13 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 
 
         let TotalMoveSpeedFactor = 1;
-        if ((this.attributes.State & EntityState.Crouch) > 0) 
+        if (this.IsState(EntityState.Crouch)) 
 
             TotalMoveSpeedFactor = 0;
 
         else 
 
-            if ((this.attributes.State & EntityState.Sprint) > 0)
+            if (this.IsState(EntityState.Sprint))
 
                 TotalMoveSpeedFactor += 0.20;
 
