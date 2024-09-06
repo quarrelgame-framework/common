@@ -53,6 +53,8 @@ export class DebugService implements OnStart
                     TextXAlignment: Enum.TextXAlignment.Left,
                 })),
 
+                StudsOffset: new Vector3(0.25),
+                StudsOffsetWorldSpace: new Vector3(0, -0.75, 0),
                 Parent: Workspace.FindFirstChild("Debug") ?? Make("Folder", { Name: "Debug", Parent: Workspace}),
                 Size: UDim2.fromOffset(128, (paramsToDebug?.size() ?? 1) * scalarSize)
             });

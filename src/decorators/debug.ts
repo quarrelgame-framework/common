@@ -12,3 +12,4 @@ export const Debug = Modding.createDecorator<[AttributeNames: string[], When?: (
     else error(`decorator 'Debug' can only be applied to components`)
 });
 
+export default Debug;
