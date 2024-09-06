@@ -1,5 +1,5 @@
 import { BaseComponent, Component, Components } from "@flamework/components";
-import { Dependency, OnPhysics, OnRender, OnStart, OnTick } from "@flamework/core";
+import { Dependency, OnPhysics, OnRender, OnStart, OnTick, Reflect } from "@flamework/core";
 import { Players, RunService, Workspace } from "@rbxts/services";
 import { Identifier } from "util/identifier";
 import { BlockMode, EntityState, HitData, HitResult, PhysicsDash, isStateAggressive, isStateCounterable, isStateNegative, isStateNeutral } from "util/lib";
@@ -11,7 +11,9 @@ import Visuals from "util/CastVisuals";
 import { Animator } from "./animator.component";
 import { Debug } from "decorators/debug";
 import { Skill, validateGroundedState } from "util/character";
-import CharacterManager from "singletons/character";
+
+import type CharacterManager from "singletons/character";
+import type { CharacterSetupFn } from "decorators/character";
 
 enum RotationMode
 {
@@ -549,7 +551,11 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         })
 
         const foundCharacter = this.CharacterManager.GetCharacter(this.attributes.CharacterId);
-        foundCharacter?.Setup?.(this.instance);
+        if (foundCharacter)
+        {
+            const setup = Reflect.getMetadata(foundCharacter, "qgf.character.setup") as CharacterSetupFn | undefined
+            setup?.(this.instance);
+        }
 
         super.onStart();
     }
@@ -581,6 +587,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
             this.attributes.BlockStun -= 1;
 
+        this.ControllerManager.BaseTurnSpeed = 9.5;
     }
 
     /* TODO:
@@ -617,6 +624,11 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             return HitResult.Blocked;
 
         return this.CanCounter() ? HitResult.Counter : HitResult.Contact;
+    }
+
+    public Rotate(towards: Vector3)
+    {
+        return this.Face(towards);
     }
 
     public FacePosition(position?: Vector3)
@@ -786,11 +798,6 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     public UnlockRotation()
     {
         this.LockRotation(RotationMode.Unlocked);
-    }
-
-    public Rotate(towards: Vector3)
-    {
-        this.ControllerManager.FacingDirection = towards;
     }
 
     // TODO: Implement a global state that allows developers to swap between
