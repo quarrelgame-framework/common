@@ -2,6 +2,7 @@ export * from "decorators/debug";
 export * from "decorators/skill";
 export * from "decorators/character";
 
+export * from "singletons/skill";
 export * from "singletons/debug";
 export * from "singletons/metadata";
 export * from "singletons/character";
