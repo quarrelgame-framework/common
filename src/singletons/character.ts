@@ -52,9 +52,7 @@ export class CharacterManager implements OnStart, OnInit
         for (const listener of this.listeners)
 
             listener.onCharacterRegistered(characterId, character);
-
     }
-
 }
 
 export default CharacterManager;
