@@ -94,6 +94,7 @@ export namespace Character
         
         EightWayDash: boolean;
 
+        Setup?: (<T extends Model>(incomingCharacter: T) => unknown);
 
         Skills: Map<MotionInput, SkillLike>
     }
@@ -169,6 +170,7 @@ export namespace Character
 
         readonly RigType: CharacterRigType;
 
+        readonly Setup?: CharacterProps["Setup"];
 
         constructor(destructorParams: CharacterProps)
         {
@@ -181,6 +183,7 @@ export namespace Character
                 Skills,
                 CharacterHeader,
                 CharacterSubheader,
+                Setup,
                 RigType,
                 CharacterArchetype,
             } = destructorParams ?? this;
@@ -194,6 +197,7 @@ export namespace Character
             this.Archetype = CharacterArchetype;
             this.Header = CharacterHeader;
             this.Subheader = CharacterSubheader;
+            this.Setup = Setup;
             this.RigType = RigType;
         }
     }
@@ -228,6 +232,7 @@ export namespace Character
 
         protected EightWayDash?: boolean;
 
+        protected Setup?: CharacterProps["Setup"];
 
         public SetName(name: string)
         {
@@ -301,6 +306,7 @@ export namespace Character
             assert(Name, "Builder incomplete! Name is unset.");
             assert(Description, "Builder incomplete! Description is unset.");
             assert(EaseOfUse, "Builder incomplete! Ease of use is unset.");
+
             return {
                 Name,
                 Description,
@@ -364,25 +370,30 @@ export namespace Skill
 
          HitStun: number;
 
+         BlockAdvantage: number;
+
          BlockStun: number;
 
          Contact: number;
 
          Animation: Animation.AnimationData;
 
+         Effects: [frame: number, effectRunner: (entity: Entity, skill: Skill) => unknown][]
+
          Hitbox: Hitbox.Hitbox;
-     }
+    }
 
     class _FrameData
-     {
-         protected AttackSetup<I extends EntityAttributes>({ Humanoid }: Entity<I>)
+    {
+         protected AttackSetup<I extends EntityAttributes>({ ControllerManager }: Entity<I>)
          {
-             Humanoid.Move(Vector3.zero, true);
+             // TODO: remove this if we cant find a use for it
+             return;
          }
-     }
+    }
 
     export class FrameData extends _FrameData
-     {
+    {
          /**
           * How many frames it takes for
           * the attack to become active.
@@ -403,6 +414,13 @@ export namespace Skill
           * Is subtracted by the {@link FrameData.Contact Contact Frames}.
           */
          public readonly RecoveryFrames;
+
+         /**
+          * How much frames advantage 
+          * a character will gain
+          * when this skill is blocked.
+          */
+         public readonly BlockAdvantageFrames;
 
          /**
           * How many frames a character
@@ -440,33 +458,42 @@ export namespace Skill
           */
          public readonly Hitbox;
 
-         constructor({ Startup, Recovery, HitStun, BlockStun, Active, Animation, Hitbox, Contact }: FrameDataClassProps)
+         /**
+          * The Effects of the Frame Data.
+          */
+         public readonly Effects;
+
+         constructor({ Startup, Recovery, Effects, HitStun, BlockStun, BlockAdvantage, Active, Animation, Hitbox, Contact }: FrameDataClassProps)
          {
              super();
 
              this.StartupFrames = Startup;
              this.RecoveryFrames = Recovery;
+             this.BlockAdvantageFrames = BlockAdvantage;
              this.BlockStunFrames = BlockStun;
-             this.HitStunFrames = BlockStun;
+             this.HitStunFrames = HitStun;
              this.ActiveFrames = Active;
              this.Animation = Animation as Readonly<NonNullable<Animation.AnimationData>>;
              this.Hitbox = Hitbox;
              this.Contact = Contact;
+             this.Effects = Effects;
          }
 
          public async Execute<
              I extends EntityAttributes,
              K extends Entity<I>,
-         >(entity: K, skill: Skill.Skill, gameMetadata: QuarrelGameMetadata = Dependency<QuarrelGameMetadata>()): Promise<HitData<Entity, Entity>>
+         >(entity: K, skill: Skill, gameMetadata: QuarrelGameMetadata = Dependency<QuarrelGameMetadata>(), linkedSkill?: Skill): Promise<HitData<Entity, Entity>>
          {
+             if (linkedSkill && entity.IsState(EntityState.Attack))
+
+                 entity.ClearState(EntityState.Attack);
+
              const { Animator } = entity;
              const previousEntityState = [ EntityState.Idle, EntityState.Crouch ].includes(entity.GetState())
                  ? entity.GetState()
                  : EntityState.Idle;
 
-             print("prev entity state:", previousEntityState);
              this.AttackSetup?.(entity);
-             // assert(RunService.IsServer(), "Function is to be run on the server.");
              assert(this.Animation, "Builder incomplete! Animation not defined.");
 
              const animatorAnimation = Animator.LoadAnimation(this.Animation);
@@ -482,9 +509,9 @@ export namespace Skill
                      lastSkillAnimation.Stop(0);
              }
 
-             entity.attributes.PreviousSkill = skill.Id;
-             return new Promise((res) =>
+             return new Promise<HitData<Entity, Entity>>((res) =>
              {
+                 let totalWaitedFrames = 0;
                  const playAnimation = async () =>
                  {
                      /* TODO: make this take any scheduler instead of quarrelgame scheduler*/
@@ -494,7 +521,19 @@ export namespace Skill
                          const waiter = async () =>
                          {
                              for (let i = 0; i < frames; i++)
+                             {
+                                 task.spawn(() =>
+                                 {
+
+                                     const effectForThisFrame = this.Effects.find(([frame]) => frame === totalWaitedFrames);
+                                     if (effectForThisFrame)
+
+                                         effectForThisFrame[1](entity, skill)
+
+                                 })
                                  await schedulerService.WaitForNextTick();
+                                 totalWaitedFrames++;
+                             }
                          };
 
                          return waiter(); //Promise.any([ waiter(), Promise.fromEvent(animatorAnimation.Ended) ]);
@@ -507,7 +546,7 @@ export namespace Skill
                          entity.ClearState(EntityState.Startup);
                      }
 
-                     let attackDidLand = HitResult.Whiffed;
+                     let attackDidLand;
                      let onContact: RBXScriptConnection | void;
 
                      const activeHitbox = this.Hitbox.Initialize(entity.GetPrimaryPart(), skill);
@@ -515,129 +554,42 @@ export namespace Skill
                      onContact = activeHitbox.Contact.Connect(({
                          Attacker,
                          Attacked,
-
-                         AttackedIsBlocking,
-                         Region,
                      }) =>
                      {
-                         const setLandState = (result: HitResult): HitResult =>
-                         {
-                             if (result === HitResult.Counter)
-                             {
-                                 if (!skill.CanCounter)
-                                     return attackDidLand = HitResult.Contact;
-                             }
-                             else if (result === HitResult.Contact)
-                             {
-                                 if (Attacked.CanCounter())
-                                     return setLandState(HitResult.Counter);
-                             }
-
-                             return attackDidLand = result;
-                         };
-
-                         if (AttackedIsBlocking)
-                         {
-                             if (Attacked.IsState(EntityState.Crouch))
-                             {
-                                 if (Region === HitboxRegion.Overhead)
-                                 {
-                                     setLandState(HitResult.Contact);
-                                     Attacked.SetHitStun(skill.FrameData.HitStunFrames * gameMetadata.CrouchStunMultiplier);
-                                 }
-                                 else
-                                 {
-                                     setLandState(HitResult.Blocked);
-                                     Attacked.AddBlockStun(skill.FrameData.BlockStunFrames);
-                                 }
-
-                                 return res({
-                                     hitResult: attackDidLand,
-                                     attacker: entity,
-                                     attacked: Attacked,
-                                 });
-                             }
-
-                             if (Region === HitboxRegion.Low)
-                             {
-                                 setLandState(HitResult.Contact);
-                                 Attacked.SetState(EntityState.Hitstun);
-                             }
-                             else
-                             {
-                                 setLandState(HitResult.Blocked);
-                                 Attacked.AddBlockStun(skill.FrameData.BlockStunFrames);
-                             }
-
-                             return res({
-                                 hitResult: attackDidLand,
-                                 attacker: entity,
-                                 attacked: Attacked,
-                             });
-                         }
-
-                         Attacker.SetState(EntityState.Hitstun);
-                         Attacked.SetHitStun(skill.FrameData.HitStunFrames);
-                         setLandState(HitResult.Contact);
-                         if (attackDidLand === HitResult.Counter)
-                             Attacked.Counter(Attacker);
-                         else
-                             print("no Attacked");
-
-                         return res({
-                             hitResult: attackDidLand,
-                             attacker: entity,
-                             attacked: Attacked,
-                         });
+                         task.spawn(() => attackDidLand = Attacker.onSkillContact(Attacked, skill) ?? HitResult.Whiffed);
+                         Attacked.onSkillContact(Attacker, skill);
                      });
 
                      await waitFrames(this.ActiveFrames);
                      activeHitbox.Stop();
                      onContact = onContact?.Disconnect();
+
+                     if (skill.LinksInto)
+                     {
+                           let linksInto;
+                           if (typeIs(skill.LinksInto, "function"))
+        
+                               linksInto = skill.LinksInto(entity)
+
+                          else
+
+                              linksInto = skill.LinksInto;
+
+                          return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
+                     }
                      entity.ClearState(EntityState.Attack);
 
                      if (this.RecoveryFrames > 0)
                      {
-                         if (attackDidLand !== HitResult.Whiffed)
-                         {
-                             let addedFrames = 0;
-                             if (attackDidLand === HitResult.Blocked)
-                                 addedFrames += this.BlockStunFrames;
-
-                             return res({
-                                 hitResult: attackDidLand,
-                                 attacker: entity,
-                             });
-                         }
-
                          entity.SetState(EntityState.Recovery);
-                         // await Promise.fromEvent(animatorAnimation.Ended);
-                         // for (let i = 0; i < this.RecoveryFrames; i++)
-                         // {
-                         //     if (animatorAnimation.IsPlaying())
-                         //         await schedulerService.WaitForNextTick();
-                         // }
-                         print("waiting frames");
-                         await waitFrames(this.RecoveryFrames);
+                         await waitFrames(math.max(this.RecoveryFrames - (attackDidLand === HitResult.Blocked ? skill.FrameData.BlockAdvantageFrames : 0), 0));
                          entity.ClearState(EntityState.Recovery);
-                         print("done waiting");
-                     }
-
-                     if (animatorAnimation.IsPlaying())
-                     {
-                         return Promise.fromEvent(animatorAnimation.Ended)
-                             .then(() =>
-                                 res({
-                                     attacker: entity,
-                                     hitResult: attackDidLand,
-                                 })
-                             );
                      }
 
                      return res({
                          attacker: entity,
-                         hitResult: attackDidLand,
-                     });
+                         hitResult: attackDidLand ?? HitResult.Whiffed,
+                     })
                  };
 
                  task.spawn(() =>
@@ -651,7 +603,7 @@ export namespace Skill
                  playAnimation();
              });
          }
-     }
+    }
 
     export class FrameDataBuilder
     {
@@ -663,11 +615,15 @@ export namespace Skill
 
          private Contact = 0;
 
-         private Block = 0;
+         private BlockAdvantage = 0;
+
+         private BlockStun = 0;
 
          private HitStun = 0;
 
          private Animation?: Animation.AnimationData;
+
+         private Effects: FrameData["Effects"] = [];
 
          private Hitbox?: Hitbox.Hitbox;
 
@@ -679,6 +635,16 @@ export namespace Skill
          {
              this.Startup = startup;
 
+             return this;
+         }
+
+         public SetEffectAtFrame(frame: number, effect: FrameData["Effects"][number][1])
+         {
+             if (this.Effects[frame])
+
+                 warn(`Frame ${frame} already has an effect. Replacing...`);
+
+             this.Effects[frame] = [frame, effect];
              return this;
          }
 
@@ -720,9 +686,21 @@ export namespace Skill
           * if the attack was blocked.
           * @param block The amount of frames added to recovery on block.
           */
-         public SetBlock(block: number)
+         public SetBlockAdvantage(block: number)
          {
-             this.Block = block;
+             this.BlockAdvantage = block;
+
+             return this;
+         }
+
+         /**
+          * Set the amount of frames that an entity will be unable to 
+          * attack for if the attack was blocked.
+          * @param block The amount of frames to stun for.
+          */
+         public SetBlockStun(block: number)
+         {
+             this.BlockStun = block;
 
              return this;
          }
@@ -767,18 +745,20 @@ export namespace Skill
           */
          public Construct()
          {
-             const { Active, Startup, Recovery, HitStun, Block: BlockStun, Animation, Hitbox, Contact } = this;
+             const { Active, Startup, Recovery, HitStun, BlockAdvantage, BlockStun, Animation, Hitbox, Contact, Effects } = this;
              assert(Animation, "Builder incomplete! Animation not defined.");
              assert(Hitbox, "Builder incomplete! Hitbox not defined.");
 
              return new FrameData({
                  Startup,
                  Recovery,
+                 BlockAdvantage,
                  BlockStun,
                  HitStun,
                  Contact,
                  Active,
                  Animation,
+                 Effects,
                  Hitbox,
              });
          }
@@ -812,6 +792,7 @@ export namespace Skill
 
          SkillType: SkillType;
 
+         LinksInto?: SkillLike,
      }
 
      /**
@@ -834,6 +815,7 @@ export namespace Skill
              this.CanCounter = CanCounter;
              this.GaugeRequired = GaugeRequired;
              this.Type = SkillType;
+             this.LinksInto = LinksInto;
 
              allCachedSkills.set(this.Id, this);
          }
@@ -894,26 +876,26 @@ export namespace Skill
 
          /**
           * The Skills that tkis Skill can cancel
-          * into.
+          * into on hit.
           */
-         public readonly GatlingsInto = new Set<SkillId>();
+         public readonly GatlingsInto: SkillClassProps["Gatlings"] = [];
+
+         /**
+          * After the skill ends their 
+          * active/recovery frames, the skill will
+          * automatically link into this move.
+          */
+         public readonly LinksInto?: SkillLike;
+
          /**
           * Set the Skills that this Skill can
           * cancel into.
           */
-         public AddGatling<NormalSkill extends Skill.Skill>(...skills: NormalSkill[])
+         public AddGatling(motionInput: MotionInput, skill: SkillLike)
          {
-             assert(skills.every(({ Type }) => Type === SkillType.Normal), "skill is not a Normal skill");
-
-             skills.forEach((skill) =>
-             {
-                 if (!this.GatlingsInto.has(skill.Id))
-                     this.GatlingsInto.add(skill.Id);
-             });
-
+             this.GatlingsInto.push([motionInput, skill])
              return this;
          }
-     }
     }
 
     export enum SkillGroundedType
@@ -965,6 +947,18 @@ export namespace Skill
 
              return this;
          }
+
+         /**
+          * Set the skill that this
+          * links into on end.
+          */
+         public SetLink(skill: SkillLike)
+         {
+            this.LinksInto = skill;
+
+            return this;
+         }
+
 
          /**
           * Set the new description.
@@ -1076,31 +1070,31 @@ export namespace Skill
           */
          public Construct(): Skill
          {
-             const { name, description, frameData, groundedType, motionInput, isReversal, canCounterHit, gaugeRequired, skillType, gatlings } = this;
-             assert(name, "Builder incomplete! Name is unset.");
-             assert(description !== undefined, "Builder incomplete! Description is unset.");
-             assert(frameData, "Builder incomplete! Frame Data is unset.");
-             assert(motionInput, "Builder incomplete! Motion input is unset.");
+             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounterHit, GaugeRequired, _SkillType, Gatlings, LinksInto } = this;
+             assert(Name, "Builder incomplete! Name is unset.");
+             assert(Description !== undefined, "Builder incomplete! Description is unset.");
+             assert(FrameData, "Builder incomplete! Frame Data is unset.");
 
              return new Skill({
-                 name,
-                 description,
-                 frameData,
-                 groundedType,
-                 motionInput,
-                 isReversal,
-                 canCounterHit,
-                 gaugeRequired,
-                 skillType,
-                 gatlings,
+                 Name,
+                 Description,
+                 FrameData,
+                 GroundedType,
+                 IsReversal,
+                 CanCounter: CanCounterHit,
+                 GaugeRequired,
+                 SkillType: _SkillType,
+                 Gatlings,
+                 LinksInto,
              });
          }
-     }
- }
+    }
+}
 
-export function validateGroundedState(skill: Skill.Skill | ((entity: Entity) => Skill.Skill), character: Entity)
+export function validateGroundedState(skill: SkillLike, character: Entity)
 {
     const outSkill = typeIs(skill, "function") ? skill(character) : skill;
+
     switch (outSkill.GroundedType)
     {
         case Skill.SkillGroundedType.AirOnly:

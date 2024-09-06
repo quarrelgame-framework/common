@@ -427,8 +427,13 @@ export enum BlockMode
     Orientation,
 }
 
-export function isStateNegative(state: number)
+export function isStateNegative(state: number, excludeStates: number | EntityState[] = [])
 {
+    const filterSignature = 
+        typeIs(excludeStates, "number") 
+        ? ((e: number) => (excludeStates & e) === 0)
+        : ((e: number) => !excludeStates.includes(e))
+
     return [
         EntityState.Startup,
         EntityState.Recovery,
@@ -438,7 +443,7 @@ export function isStateNegative(state: number)
         EntityState.Jumping,
         EntityState.Landing,
         EntityState.Dash,
-    ].some((v) => (state & v) > 0);
+    ].filter(filterSignature).some((v) => (state & v) > 0);
 }
 
 export function isStateCounterable(state: number)

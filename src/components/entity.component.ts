@@ -10,7 +10,8 @@ import type { ICharacter, ICharacterR6 } from "@quarrelgame-framework/types";
 import Visuals from "util/CastVisuals";
 import { Animator } from "./animator.component";
 import { Debug } from "decorators/debug";
-import { Skill } from "util/character";
+import { Skill, validateGroundedState } from "util/character";
+import CharacterManager from "singletons/character";
 
 enum RotationMode
 {
@@ -471,7 +472,7 @@ export interface EntityAttributes extends EntityBaseAttributes
 
     /**
      * The Id of the skill that the Entity
-     * is currently doing.
+     * is/was doing.
      */
     PreviousSkill?: string;
 
@@ -528,7 +529,7 @@ export interface EntityAttributes extends EntityBaseAttributes
 @Debug(["AirJumps", "AirOptions", "AirDashes", "EntityId"], (() => RunService.IsClient()))
 export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
-    constructor()
+    constructor(protected readonly CharacterManager: CharacterManager)
     { super(); }
 
     onStart()
@@ -541,7 +542,14 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
                 this.attributes.AirOptions = this.attributes.MaxAirOptions;
                 this.attributes.AirJumps = this.attributes.MaxAirJumps;
             }
+
+            if (this.IsNeutral())
+
+                this.lastSkillHit = undefined;
         })
+
+        const foundCharacter = this.CharacterManager.GetCharacter(this.attributes.CharacterId);
+        foundCharacter?.Setup?.(this.instance);
 
         super.onStart();
     }
@@ -551,7 +559,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         super.onTick();
         if (this.CanBeModified())
         {
-            if (this.IsAttacking())
+            if (this.IsNegative())
             {
                 this.ControllerManager.BaseMoveSpeed = 0;
                 print("no move")
@@ -575,13 +583,57 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
     }
 
+    /* TODO:
+     * use a class decorator called QGFMetadata
+     * and then use a shared singleton called
+     * MetadataManager to allow the developer
+     * to set their contact functions by class
+     */
+
+    /*
+     * Fires when a skill the entity executed hits another
+     * entity.
+     */
+    protected lastSkillHit?: Skill.Skill;
+    public onSkillContact(contact: Entity, skill: Skill.Skill): HitResult | undefined
+    {
+        print("yuy i hit them");
+        this.lastSkillHit = skill;
+        return;
+    }
+
+    /*
+     * Fires when a skill another entity executed hits this
+     * entity.
+     */
+    public onSkillContacted(contacted: Entity, skill: Skill.Skill): HitResult | undefined
+    {
+        print("darn i got hit");
+        this.SetState(EntityState.Hitstun);
+        this.SetHitStun(skill.FrameData.HitStunFrames);
+
+        if (this.IsBlocking(contacted.instance.GetPivot().Position))
+
+            return HitResult.Blocked;
+
+        return this.CanCounter() ? HitResult.Counter : HitResult.Contact;
+    }
+
     public FacePosition(position?: Vector3)
     {
+        if (this.IsNegative())
+
+            return;
+
         this.ControllerManager.FacingDirection = CFrame.lookAt(this.instance.GetPivot().Position, position ?? Vector3.zero).LookVector;
     }
 
     public Face(direction?: Vector3)
     {
+        if (this.IsNegative())
+
+            return;
+
         this.ControllerManager.FacingDirection = direction ?? Vector3.zero;
     }
 
@@ -655,15 +707,43 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     /**
      * Execute a skill.
      *
+     * Skills can be canceled into
      */
-    public async ExecuteSkill(skillId: (Skill.Skill["Id"])[]): Promise<boolean>
+    public async ExecuteSkill(skillPriorityList: (Skill.Skill["Id"])[])
     {
-        // for (const skills of Characters.get(""))
-        // {
-        //
-        // }
-        //
-        return true;
+        const currentCharacter = this.CharacterManager.GetCharacter(this.attributes.CharacterId);
+        assert(currentCharacter, "current character is undefined");
+
+        return new Promise<HitData<Entity, Entity>>((res, rej) => 
+        {
+            const maybeGatlingSkill = this.lastSkillHit?.GatlingsInto.find((e) => skillPriorityList.includes((typeIs(e[1], "function") ? e[1](this) : e[1]).Id));
+            const gatlingSkill = typeIs(maybeGatlingSkill?.[1], "function") ? maybeGatlingSkill![1](this) : maybeGatlingSkill?.[1];
+            if (this.IsNegative())
+                
+                if (!gatlingSkill)
+                
+                     return;
+
+            return Promise.resolve(gatlingSkill ? [gatlingSkill] : skillPriorityList.mapFiltered((skillId) =>
+            {
+                const processedAttacks = [...currentCharacter.Skills].map((e) => typeIs(e[1], "function") ? e[1](this) : e[1]);
+                for (const skill of [...processedAttacks])
+
+                    if (skill.Id === skillId)
+
+                        if (validateGroundedState(skill, this))
+
+                            return skill;
+
+                return undefined;
+            })).then((skills) => 
+            {
+                const firstSkill = skills[0];
+                this.attributes.PreviousSkill = firstSkill.Id;
+
+                return firstSkill;
+            }).then((skill) => skill?.FrameData.Execute(this, skill).then(res).catch(rej))
+        });
     }
 
     /**
@@ -677,7 +757,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
     public async Dash()
     {
-        if (this.IsNegative())
+        if (this.IsNegative(!!this.lastSkillHit))
             return Promise.resolve(false);
 
         if (!this.IsGrounded())
@@ -751,7 +831,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
     public override CanJump()
     {
-        if (!this.IsNegative())
+        if (!this.IsNegative(!!this.lastSkillHit))
             if (this.IsGrounded())
                 return !this.IsState(EntityState.Jumping);
             else
@@ -775,9 +855,9 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         return isStateNeutral(this.GetState());
     }
 
-    public IsNegative()
+    public IsNegative(excludeRecovery?: boolean)
     {
-        return isStateNegative(this.GetState()) || this.attributes.BlockStun > 0 || this.attributes.HitStun > 0;
+        return isStateNegative(this.GetState(), excludeRecovery ? EntityState.Recovery & EntityState.Attack : []) || this.attributes.BlockStun > 0 || this.attributes.HitStun > 0;
     }
 
     public IsAttacked()
@@ -787,6 +867,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             EntityState.Knockdown,
         );
     }
+
     public override Crouch(crouchState: boolean)
     {
         if (isStateNegative(this.attributes.State))
@@ -795,4 +876,5 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
         super.Crouch(crouchState)
     }
+
 }

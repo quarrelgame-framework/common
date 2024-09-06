@@ -10,10 +10,12 @@ import Signal from "@rbxts/signal";
 // import type { QuarrelGame } from "@quarrelgame-framework/server";
 import type * as Entity from "components/entity.component";
 import * as lib from "util/lib";
+import { SchedulerService } from "singletons/scheduler";
 export interface OnHit
 {
     onHit(contactData: Hitbox.Contact): void;
 }
+
 
 type Frames = number;
 export namespace Hitbox
@@ -188,8 +190,13 @@ export namespace Hitbox
                 FillColor: new Color3(1, 0, 0),
             });
 
-            task.delay(0.5, () =>
+            task.spawn(async () =>
             {
+                for (let i = 0; i < (skill.FrameData.StartupFrames ?? 0) + (skill.FrameData.ActiveFrames ?? 0); i++)
+
+                    await Dependency<SchedulerService>().WaitForNextTick()
+
+
                 preferredHitboxVisualizer.Destroy();
             });
 
