@@ -2,7 +2,7 @@ import { BaseComponent, Component, Components } from "@flamework/components";
 import { Dependency, OnPhysics, OnRender, OnStart, OnTick } from "@flamework/core";
 import { Players, RunService, Workspace } from "@rbxts/services";
 import { Identifier } from "util/identifier";
-import { BlockMode, EntityState, PhysicsDash, isStateAggressive, isStateCounterable, isStateNegative, isStateNeutral } from "util/lib";
+import { BlockMode, EntityState, HitData, HitResult, PhysicsDash, isStateAggressive, isStateCounterable, isStateNegative, isStateNeutral } from "util/lib";
 import { Motion } from "util/input";
 import { StatefulComponent, StateAttributes } from "./state.component";
 import type { ICharacter, ICharacterR6 } from "@quarrelgame-framework/types";
@@ -224,20 +224,21 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
     }
 
     public Crouch(crouchState: boolean = ((this.attributes.State & EntityState.Crouch) > 0)) {
+        if (!this.CanBeModified())
 
-        print("still dont nkow whats going ong", crouchState, this.IsGrounded());
+            return;
+
+        // print("lololololololololol", this.GetState(), crouchState)
         if (crouchState)
         {
             if (this.IsGrounded())
             {
-                print("amma crouchin!");
                 this.attributes.State |= EntityState.Crouch;
             }
 
         }
         else
         {
-            print("amma un-crouchin!");
             this.attributes.State &= ~EntityState.Crouch;
         }
     }
@@ -252,7 +253,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         const { AssemblyMass } = PrimaryPart;
         let jumpImpulse = Vector3.zero;
 
-        const { X, Y, Z } = this.ControllerManager.MovingDirection;
+        const { X, Z } = this.ControllerManager.MovingDirection;
         const directionMotion = new Vector3(math.sign(X), 1, math.sign(Z))
 
         if (!this.IsGrounded())
@@ -785,5 +786,13 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             EntityState.Hitstun,
             EntityState.Knockdown,
         );
+    }
+    public override Crouch(crouchState: boolean)
+    {
+        if (isStateNegative(this.attributes.State))
+
+            return
+
+        super.Crouch(crouchState)
     }
 }
