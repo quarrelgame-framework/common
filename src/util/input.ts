@@ -157,7 +157,7 @@ function temporarySwap(array: unknown[])
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (Motion | Input)[], character: Character.Character, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
+export function validateMotion(input: (Motion | Input)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
 {
     const currentMotion = [ ...input ];
     const decompiledAttacks = [...character.Skills]

@@ -16,6 +16,7 @@ import { Identifier } from "./identifier";
 
 import QuarrelGameMetadata from "singletons/metadata";
 import { SchedulerService } from "singletons/scheduler";
+import SkillManager from "singletons/skill";
 
 
 type SkillName = string;
@@ -376,7 +377,7 @@ export namespace Skill
 
          Contact: number;
 
-         Animation: Animation.AnimationData;
+         Animation?: Animation.AnimationData;
 
          Effects: [frame: number, effectRunner: (entity: Entity, skill: Skill) => unknown][]
 
@@ -451,7 +452,7 @@ export namespace Skill
          /**
           * The Animation of the Frame Data.
           */
-         public readonly Animation;
+         public readonly Animation: Animation.AnimationData | undefined;
 
          /**
           * The Hitbox of the Frame Data.
@@ -489,21 +490,16 @@ export namespace Skill
                  entity.ClearState(EntityState.Attack);
 
              const { Animator } = entity;
-             const previousEntityState = [ EntityState.Idle, EntityState.Crouch ].includes(entity.GetState())
-                 ? entity.GetState()
-                 : EntityState.Idle;
-
              this.AttackSetup?.(entity);
-             assert(this.Animation, "Builder incomplete! Animation not defined.");
 
-             const animatorAnimation = Animator.LoadAnimation(this.Animation);
+             const animatorAnimation = this.Animation ? Animator.LoadAnimation(this.Animation) : undefined;
              const previousSkill = entity.attributes.PreviousSkill;
-             const cachedPreviousSkill = previousSkill ? GetCachedSkill(previousSkill) : undefined;
+             const cachedPreviousSkill = Dependency<SkillManager>().GetSkill(previousSkill ?? tostring({}));
              if (cachedPreviousSkill)
              {
                  const lastSkillAnimation = Animator.GetAnimator()
                      .GetPlayingAnimationTracks()
-                     .find((t) => t.Animation?.AnimationId === cachedPreviousSkill.FrameData.Animation.assetId);
+                     .find((t) => t.Animation?.AnimationId === cachedPreviousSkill.FrameData.Animation?.assetId);
 
                  if (lastSkillAnimation)
                      lastSkillAnimation.Stop(0);
@@ -522,15 +518,19 @@ export namespace Skill
                          {
                              for (let i = 0; i < frames; i++)
                              {
+                                 if (entity.attributes.PreviousSkill !== skill.Id)
+
+                                     break;
+
                                  task.spawn(() =>
                                  {
-
                                      const effectForThisFrame = this.Effects.find(([frame]) => frame === totalWaitedFrames);
                                      if (effectForThisFrame)
 
                                          effectForThisFrame[1](entity, skill)
 
                                  })
+
                                  await schedulerService.WaitForNextTick();
                                  totalWaitedFrames++;
                              }
@@ -539,6 +539,7 @@ export namespace Skill
                          return waiter(); //Promise.any([ waiter(), Promise.fromEvent(animatorAnimation.Ended) ]);
                      };
 
+                     entity.attributes.PreviousSkill = skill.Id;
                      if (this.StartupFrames > 0)
                      {
                          entity.SetState(EntityState.Startup);
@@ -575,8 +576,13 @@ export namespace Skill
 
                               linksInto = skill.LinksInto;
 
+                          if (animatorAnimation?.IsPlaying())
+
+                              await animatorAnimation.Stop({FadeTime: 0})
+
                           return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
                      }
+
                      entity.ClearState(EntityState.Attack);
 
                      if (this.RecoveryFrames > 0)
@@ -594,7 +600,7 @@ export namespace Skill
 
                  task.spawn(() =>
                  {
-                     animatorAnimation.Play({
+                     animatorAnimation?.Play({
                          FadeTime: 0,
                          // Weight: 4, - THIS CAN BREAK SHIT.
                      });
@@ -746,7 +752,6 @@ export namespace Skill
          public Construct()
          {
              const { Active, Startup, Recovery, HitStun, BlockAdvantage, BlockStun, Animation, Hitbox, Contact, Effects } = this;
-             assert(Animation, "Builder incomplete! Animation not defined.");
              assert(Hitbox, "Builder incomplete! Hitbox not defined.");
 
              return new FrameData({
@@ -767,11 +772,6 @@ export namespace Skill
     type SkillId = string;
     const allCachedSkills: Map<SkillId, Skill> = new Map();
 
-    export function GetCachedSkill(skillId: SkillId): Skill | undefined
-     {
-         return allCachedSkills.get(skillId);
-     }
-
     interface SkillClassProps
      {
          Name: string;
@@ -790,6 +790,8 @@ export namespace Skill
 
          Gatlings: Array<[MotionInput, SkillLike]>;
 
+         Rekkas: Array<[MotionInput, SkillLike]>;
+
          SkillType: SkillType;
 
          LinksInto?: SkillLike,
@@ -804,8 +806,9 @@ export namespace Skill
              destructorParams: SkillClassProps
          )
          {
-             
-             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounter, GaugeRequired, SkillType, LinksInto } = destructorParams ?? this;
+             const skillManager = Modding.resolveSingleton<SkillManager>(SkillManager);
+             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounter, GaugeRequired, SkillType, LinksInto, Gatlings, Rekkas } = destructorParams ?? this;
+
 
              this.Name = Name;
              this.Description = Description;
@@ -816,8 +819,12 @@ export namespace Skill
              this.GaugeRequired = GaugeRequired;
              this.Type = SkillType;
              this.LinksInto = LinksInto;
+             this.Gatlings = Gatlings;
+             this.Rekkas = Rekkas;
 
-             allCachedSkills.set(this.Id, this);
+             if (!skillManager.SkillExists(this.Id))
+
+                skillManager.RegisterSkill(this.Id, this)
          }
 
          /**
@@ -878,7 +885,13 @@ export namespace Skill
           * The Skills that tkis Skill can cancel
           * into on hit.
           */
-         public readonly GatlingsInto: SkillClassProps["Gatlings"] = [];
+         public readonly Gatlings: SkillClassProps["Gatlings"] = [];
+
+         /**
+          * The Skills that tkis Skill can rekka
+          * into before recovery.
+          */
+         public readonly Rekkas: SkillClassProps["Rekkas"] = [];
 
          /**
           * After the skill ends their 
@@ -889,11 +902,21 @@ export namespace Skill
 
          /**
           * Set the Skills that this Skill can
-          * cancel into.
+          * cancel into on hit.
           */
          public AddGatling(motionInput: MotionInput, skill: SkillLike)
          {
-             this.GatlingsInto.push([motionInput, skill])
+             this.Gatlings.push([motionInput, skill])
+             return this;
+         }
+
+         /**
+          * Set the Skills that this Skill can
+          * cancel into before recovery.
+          */
+         public AddRekka(motionInput: MotionInput, skill: SkillLike)
+         {
+             this.Rekkas.push([motionInput, skill])
              return this;
          }
     }
@@ -930,6 +953,8 @@ export namespace Skill
          private CanCounterHit = true;
 
          private Gatlings: SkillClassProps["Gatlings"] = [];
+
+         private Rekkas: SkillClassProps["Rekkas"] = [];
 
          private GaugeRequired = 0;
          
@@ -1063,6 +1088,18 @@ export namespace Skill
 
              return this;
          }
+         /**
+          * Set whether this skill can be executed during the
+          * previous skill's recovery phase, provided said 
+          * previous skill has made contact with an entity.
+          * @param skill The potential follow-up skill.
+          */
+         public RekkasInto(motion: MotionInput, skill: Skill.Skill)
+         {
+             this.Rekkas.push([motion, skill])
+
+             return this;
+         }
 
          /**
           * Construct the skill into a new readonly Skill instance.
@@ -1070,7 +1107,7 @@ export namespace Skill
           */
          public Construct(): Skill
          {
-             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounterHit, GaugeRequired, _SkillType, Gatlings, LinksInto } = this;
+             const { Name, Description, FrameData, GroundedType, IsReversal, CanCounterHit, GaugeRequired, _SkillType, Gatlings, LinksInto, Rekkas } = this;
              assert(Name, "Builder incomplete! Name is unset.");
              assert(Description !== undefined, "Builder incomplete! Description is unset.");
              assert(FrameData, "Builder incomplete! Frame Data is unset.");
@@ -1085,6 +1122,7 @@ export namespace Skill
                  GaugeRequired,
                  SkillType: _SkillType,
                  Gatlings,
+                 Rekkas,
                  LinksInto,
              });
          }

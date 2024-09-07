@@ -13,6 +13,7 @@ import { Debug } from "decorators/debug";
 import { Skill, validateGroundedState } from "util/character";
 
 import type CharacterManager from "singletons/character";
+import type SkillManager from "singletons/skill";
 import type { CharacterSetupFn } from "decorators/character";
 
 enum RotationMode
@@ -531,7 +532,7 @@ export interface EntityAttributes extends EntityBaseAttributes
 @Debug(["AirJumps", "AirOptions", "AirDashes", "EntityId"], (() => RunService.IsClient()))
 export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
-    constructor(protected readonly CharacterManager: CharacterManager)
+    constructor(protected readonly CharacterManager: CharacterManager, protected readonly SkillManager: SkillManager)
     { super(); }
 
     onStart()
@@ -726,35 +727,49 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         const currentCharacter = this.CharacterManager.GetCharacter(this.attributes.CharacterId);
         assert(currentCharacter, "current character is undefined");
 
-        return new Promise<HitData<Entity, Entity>>((res, rej) => 
+        return new Promise<HitData<Entity, Entity>>(async (res, rej) => 
         {
-            const maybeGatlingSkill = this.lastSkillHit?.GatlingsInto.find((e) => skillPriorityList.includes((typeIs(e[1], "function") ? e[1](this) : e[1]).Id));
-            const gatlingSkill = typeIs(maybeGatlingSkill?.[1], "function") ? maybeGatlingSkill![1](this) : maybeGatlingSkill?.[1];
-            if (this.IsNegative())
-                
-                if (!gatlingSkill)
-                
-                     return;
+            const unwrapper: (<T>(e: [object, T | ((e: Entity) => T)]) => T) = ((e) => (typeIs(e[1], "function") ? e[1](this) : e[1]));
+            const previousSkill = this.SkillManager.GetSkill(this.attributes.PreviousSkill ?? tostring({}));
+            const gatlingSkills = this.lastSkillHit?.Gatlings.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []
+            const rekkaSkills = previousSkill?.Rekkas.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []
 
-            return Promise.resolve(gatlingSkill ? [gatlingSkill] : skillPriorityList.mapFiltered((skillId) =>
+            return Promise.resolve([...[...gatlingSkills, ...rekkaSkills].map((e) => e.Id), ...skillPriorityList].mapFiltered((skillId) =>
             {
-                const processedAttacks = [...currentCharacter.Skills].map((e) => typeIs(e[1], "function") ? e[1](this) : e[1]);
-                for (const skill of [...processedAttacks])
-
+                const processedAttacks = [...currentCharacter.Skills].map(unwrapper);
+                for (const skill of [...rekkaSkills, ...gatlingSkills, ...processedAttacks,])
+                {
                     if (skill.Id === skillId)
+                    {
+                        const isGatlingSkill = gatlingSkills.includes(skill);
+                        const isRekkaSkill = rekkaSkills.includes(skill);
+
+                        if (this.IsNegative())
+                        {
+                            if (this.WasAttacked())
+                            {
+                                return;
+                            }
+                            else if (!isGatlingSkill)
+                            {
+                                if (isRekkaSkill)
+
+                                    if (this.IsState(EntityState.Recovery))
+
+                                        return;
+                            }
+                            else return;
+                        } 
+                        
 
                         if (validateGroundedState(skill, this))
 
                             return skill;
+                    }
+                }
 
                 return undefined;
-            })).then((skills) => 
-            {
-                const firstSkill = skills[0];
-                this.attributes.PreviousSkill = firstSkill.Id;
-
-                return firstSkill;
-            }).then((skill) => skill?.FrameData.Execute(this, skill).then(res).catch(rej))
+            })).then((skills) => skills[0]).then((skill) => skill?.FrameData.Execute(this, skill).then(res).catch(rej))
         });
     }
 
@@ -867,7 +882,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         return isStateNegative(this.GetState(), excludeRecovery ? EntityState.Recovery & EntityState.Attack : []) || this.attributes.BlockStun > 0 || this.attributes.HitStun > 0;
     }
 
-    public IsAttacked()
+    public WasAttacked()
     {
         return this.IsState(
             EntityState.Hitstun,
