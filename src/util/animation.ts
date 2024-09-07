@@ -143,6 +143,11 @@ export namespace Animation
             this.linkedAnimation = animation;
         }
 
+        public GetLinked()
+        {
+            return this.linkedAnimation;
+        }
+
         /**
         * Returns a signal that is fired when the progress is passed.
         *

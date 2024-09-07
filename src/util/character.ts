@@ -592,6 +592,26 @@ export namespace Skill
                          entity.ClearState(EntityState.Recovery);
                      }
 
+                     if (animatorAnimation?.IsPlaying())
+                     {
+                        let animationLinked = animatorAnimation;
+                        while (true)
+                        {
+                            if (animationLinked.AnimationTrack.IsPlaying)
+                            {
+                                if (animationLinked.AnimationTrack.Looped)
+                                    
+                                    animationLinked.Stop({FadeTime: 0});
+                            }
+                            const linked = animationLinked.GetLinked()
+                            animationLinked = linked ?? animationLinked;
+
+                            if (!linked)
+
+                                break;
+                        }
+                     }
+
                      return res({
                          attacker: entity,
                          hitResult: attackDidLand ?? HitResult.Whiffed,
