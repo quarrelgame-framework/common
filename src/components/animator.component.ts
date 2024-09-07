@@ -144,30 +144,17 @@ export namespace Animator
                                 {
                                     // animationWasInterrupted = true;
                                     print("0.25 fadetime");
-                                    this.currentLoadedAnimation?.Stop({ fadeTime: 0.25 });
+                                    this.currentLoadedAnimation?.Stop({ FadeTime: 0.25 });
                                 }
                             }
                             else
                             {
                                 // print("0 fadetime");
-                                this.currentLoadedAnimation?.Stop({ fadeTime: 0.15 });
+                                this.currentLoadedAnimation?.Stop({ FadeTime: 0.15 });
                             }
-
-                            // if (
-                            //     newLoadedAnimation.Priority === Enum.AnimationPriority.Idle
-                            //     && this.currentLoadedAnimation?.Priority === Enum.AnimationPriority.Movement
-                            //     && !animationWasInterrupted
-                            // )
-                            // {
-                            //     animationWasInterrupted = true;
-                            //     this.currentLoadedAnimation.Stop({ fadeTime: 0.25 });
-                            // }
                         }
                     }
 
-                    const isBecomingNeutralish = [ EntityState.Idle, EntityState.Crouch ].some((v) => (v & newState) > 1);
-
-                    // isBecomingNeutralish ? 0 : (animationWasInterrupted ? 0 : undefined),
                     this.currentLoadedAnimation = newLoadedAnimation;
                     this.currentLoadedAnimation.Play({
                         FadeTime: 0,

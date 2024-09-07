@@ -23,6 +23,7 @@ export namespace Animation
         isAttackAnimation?: boolean;
         priority?: Enum.AnimationPriority;
         loop?: boolean;
+        links?: Animation.AnimationData;
     }
 
     enum AnimationState
@@ -135,6 +136,13 @@ export namespace Animation
 
         public KeyframeReached: Signal<() => void> = new Signal();
 
+        protected linkedAnimation?: Animation.Animation;
+
+        public Link(animation?: Animation.Animation)
+        {
+            this.linkedAnimation = animation;
+        }
+
         /**
         * Returns a signal that is fired when the progress is passed.
         *
@@ -177,6 +185,9 @@ export namespace Animation
             this.AnimationTrack = animator.GetAnimator().LoadAnimation(this.Animation);
             this.AnimationTrack.Priority = priority ?? Enum.AnimationPriority.Action;
             this.AnimationTrack.Looped = loop ?? false;
+
+            if (animationData.links)
+            this.linkedAnimation = new Animation(animator, animationData.links);
 
             this.Priority = this.AnimationTrack.Priority;
             this.AnimationId = this.Animation.AnimationId;
@@ -221,17 +232,17 @@ export namespace Animation
             this.tickRate = tickRate;
         }
 
-        public IsPlaying()
+        public IsPlaying(): boolean
         {
-            return this.AnimationTrack.IsPlaying;
+            return !!(this.linkedAnimation && this.linkedAnimation.IsPlaying()) || this.AnimationTrack.IsPlaying;
         }
 
-        public IsPaused()
+        public IsPaused(): boolean
         {
-            return this.AnimationTrack.Speed === 0 && this.IsPlaying();
+            return !!(this.linkedAnimation && this.linkedAnimation.IsPaused()) || (this.AnimationTrack.Speed === 0 && this.IsPlaying());
         }
 
-        public IsLoaded()
+        public IsLoaded(): boolean
         {
             if (this.AnimationTrack.IsPropertyModified("Length"))
                 return true;
@@ -241,23 +252,39 @@ export namespace Animation
 
         public readonly Loaded;
 
+        protected wasStoppedByFunction = false;
+        protected playId?: string;
         public async Play(playOptions?: PlayOptions): Promise<this>
         {
+            await this.Stop({FadeTime: playOptions?.FadeTime ?? 0})
             return new Promise((res) =>
             {
-                // print(`Animation ${this.Animation.GetFullName()} is now playing.`);
-                this.AnimationTrack.Stopped.Once(() =>
+                const playId = this.playId = tostring({});
+                const setupListener = async () => 
                 {
-                    // print(`Animation ${this.Animation.GetFullName()} has stopped.`);
-                });
+                    this.AnimationTrack.Stopped.Wait();
+
+                    if (!this.wasStoppedByFunction)
+
+                        if (this.playId === playId)
+
+                            this.linkedAnimation?.Play({ FadeTime: 0 });
+                }
+
+                this.wasStoppedByFunction = false;
 
                 if (playOptions?.Preload)
                 {
                     return this.Loaded.then(() =>
                     {
-                        this.animator.attributes.ActiveAnimation = this.Id;
-                        this.AnimationTrack.Looped = this.AnimationData.loop ?? false;
-                        this.AnimationTrack.Play(playOptions?.FadeTime, playOptions?.Weight, playOptions?.Speed ?? 1);
+                        if (this.playId === playId)
+                        {
+                            this.animator.attributes.ActiveAnimation = this.Id;
+                            this.AnimationTrack.Looped = this.AnimationData.loop ?? false;
+                            this.AnimationTrack.Play(playOptions?.FadeTime, playOptions?.Weight, playOptions?.Speed ?? 1);
+
+                            setupListener();
+                        }
 
                         return res(this);
                     });
@@ -267,33 +294,48 @@ export namespace Animation
                 this.AnimationTrack.Looped = this.AnimationData.loop ?? false;
                 this.AnimationTrack.Play(playOptions?.FadeTime, playOptions?.Weight, playOptions?.Speed ?? 1);
 
+                setupListener();
                 return res(this);
             });
         }
 
         public async Pause(): Promise<this>
         {
-            this.AnimationTrack?.AdjustSpeed(0);
+            if (!this.AnimationTrack.IsPlaying)
+            {
+                if (this.linkedAnimation)
+
+                    this.linkedAnimation.Pause();
+
+            } else this.AnimationTrack?.AdjustSpeed(0);
 
             return this;
         }
 
         public async Resume(): Promise<this>
         {
-            this.AnimationTrack?.AdjustSpeed(1);
+            if (!this.AnimationTrack.IsPlaying)
+            {
+                if (this.linkedAnimation)
+
+                    this.linkedAnimation.Resume();
+
+            } this.AnimationTrack?.AdjustSpeed(1);
 
             return this;
         }
 
-        public async Stop({ fadeTime, yieldFade }: { fadeTime?: number; yieldFade?: boolean; }): Promise<this>
+        public async Stop({ FadeTime, yieldFade }: { FadeTime?: number; yieldFade?: boolean; }): Promise<this>
         {
-            // print(`Animation ${this.Animation.GetFullName()} is stopping with paramters: {${fadeTime}, ${yieldFade}}`);
-            this.AnimationTrack.Stop(fadeTime);
+            this.wasStoppedByFunction = true;
+            this.linkedAnimation?.Stop({FadeTime});
+
+            this.AnimationTrack.Stop(FadeTime);
             if (this.animator.attributes.ActiveAnimation === this.Id)
                 this.animator.attributes.ActiveAnimation = undefined;
 
             if (yieldFade)
-                task.wait(fadeTime);
+                task.wait(FadeTime);
 
             return this;
         }
@@ -306,6 +348,8 @@ export namespace Animation
         private priority?: Enum.AnimationPriority;
 
         private name?: string;
+
+        private links?: AnimationData;
 
         private loop = false;
 
@@ -346,6 +390,13 @@ export namespace Animation
             return this;
         }
 
+        public LinksInto(animation: Animation.AnimationData | Animation.Animation)
+        {
+            this.links = "assetId" in animation ? animation : animation.AnimationData;
+
+            return this;
+        }
+
         public Construct(): Readonly<AnimationData>
         {
             assert(this.assetId, "Builder incomplete! Asset Id is unset.");
@@ -357,6 +408,7 @@ export namespace Animation
                 name: this.name,
                 loop: this.loop,
                 isAttackAnimation: this.attack,
+                links: this.links,
             } as const;
         }
     }
