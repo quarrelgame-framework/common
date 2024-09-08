@@ -15,6 +15,7 @@ import { Skill, validateGroundedState } from "util/character";
 import type CharacterManager from "singletons/character";
 import type SkillManager from "singletons/skill";
 import type { CharacterSetupFn } from "decorators/character";
+import { SchedulerService } from "singletons/scheduler";
 
 enum RotationMode
 {
@@ -77,9 +78,9 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
     public readonly GroundOffsetMultiplier = 1;
     public readonly Animator: Animator.StateAnimator;
 
-    constructor()
+    constructor(protected readonly schedulerService: SchedulerService)
     {
-        super();
+        super(schedulerService);
         const components = Dependency<Components>();
         const currentAnimator = components.getComponent<Animator.StateAnimator>(this.instance);
         if (currentAnimator)
@@ -269,10 +270,14 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         
             jumpImpulse = new Vector3(0, AssemblyMass);
 
-
-        PrimaryPart.ApplyImpulse(jumpImpulse.mul(this.jumpMultiplier));
+        this.SetState(EntityState.Jumping)
         this.Humanoid.ChangeState(Enum.HumanoidStateType.Jumping);
-        this.GroundSensor.SensedPart?.ApplyImpulseAtPosition(jumpImpulse.mul(-this.jumpMultiplier), this.GroundSensor.HitFrame.Position)
+        this.WhileInState(this.IsState(EntityState.Midair) ? 0 : 4, EntityState.Jumping).then(() =>
+        {
+            this.ClearState(EntityState.Jumping)
+            PrimaryPart.ApplyImpulse(jumpImpulse.mul(this.jumpMultiplier));
+            this.GroundSensor.SensedPart?.ApplyImpulseAtPosition(jumpImpulse.mul(-this.jumpMultiplier), this.GroundSensor.HitFrame.Position)
+        }).catch(() => print("left jumping state"));
 
         return true;
     }
@@ -532,8 +537,8 @@ export interface EntityAttributes extends EntityBaseAttributes
 @Debug(["AirJumps", "AirOptions", "AirDashes", "EntityId"], (() => RunService.IsClient()))
 export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
-    constructor(protected readonly CharacterManager: CharacterManager, protected readonly SkillManager: SkillManager)
-    { super(); }
+    constructor(protected readonly CharacterManager: CharacterManager, protected readonly SkillManager: SkillManager, protected readonly schedulerService: SchedulerService)
+    { super(schedulerService); }
 
     onStart()
     {
@@ -588,6 +593,12 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
             this.attributes.BlockStun -= 1;
 
+
+        if (this.IsNegative())
+
+            this.ControllerManager.BaseTurnSpeed = 0;
+
+        else this.ControllerManager.BaseTurnSpeed = 9.5;
     }
 
     /* TODO:
