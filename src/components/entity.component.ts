@@ -588,7 +588,6 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
             this.attributes.BlockStun -= 1;
 
-        this.ControllerManager.BaseTurnSpeed = 9.5;
     }
 
     /* TODO:
