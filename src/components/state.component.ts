@@ -3,6 +3,7 @@ import { OnStart } from "@flamework/core";
 import { EntityState } from "util/lib";
 
 import Signal from "@rbxts/signal";
+import { SchedulerService } from "singletons/scheduler";
 
 export interface StateAttributes
 {
@@ -22,6 +23,11 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
     private stateEffects: Map<EntityState, (oldState: EntityState) => void> = new Map();
 
     public readonly StateChanged = new Signal<(oldState: number, newState: number, wasForced?: boolean) => void>();
+
+    constructor(protected readonly schedulerService: SchedulerService)
+    {
+        super()
+    }
 
     onStart()
     {
@@ -126,26 +132,34 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
             this.SetState(this.defaultState);
     }
 
-    public WhileInState(time: number | undefined, state = this.attributes.State): Promise<void>
+    public async WhileInState(frames: number, state = this.attributes.State): Promise<void>
     {
-        return new Promise((res, rej) => {
-            let r: RBXScriptConnection | void = this.StateChanged.Once((_, new_state) =>
+        let stateListener: RBXScriptConnection | undefined;
+        let elapsedFrames = 0;
+        return Promise.race([
+            new Promise<void>(async (res) =>
             {
-                if ((state & new_state) > 0)
+                while (elapsedFrames < frames)
+                {
+                    await this.schedulerService.WaitForNextTick();
+                    elapsedFrames++
+                }
 
-                    return;
-
-                return rej(false);
-            });
-
-            task.delay(time ?? 0, () => {
-                if ((state & this.GetState()) > 0)
-
-                    return res();
-
-                rej(false);
-            });
-        });
+                stateListener?.Disconnect();
+                res();
+            }),
+            new Promise<void>((_, rej) =>
+            {
+                stateListener = this.StateChanged.Connect(() =>
+                {
+                    if (!this.IsState(state))
+                    {
+                        stateListener?.Disconnect();
+                        rej()
+                    }
+                });
+            })
+        ])
     }
 
     public PrintState(k: EntityState[] = [
