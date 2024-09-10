@@ -76,7 +76,7 @@ export class DebugService implements OnStart
 
                     if (Billboard)
 
-                        Billboard.Adornee = instanceComponent.instance as PVInstance;
+                        Billboard.Adornee = (instanceComponent.instance.IsA("Model") && instanceComponent.instance.PrimaryPart ? instanceComponent.instance.PrimaryPart : instanceComponent.instance) as PVInstance;
 
                 } else if (Billboard)
 
