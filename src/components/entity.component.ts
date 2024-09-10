@@ -254,6 +254,10 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 
             return false;
 
+        if (!this.CanBeModified())
+
+            return false;
+
         const { PrimaryPart } = this.instance;
         const { AssemblyMass } = PrimaryPart;
         let jumpImpulse = Vector3.zero;
@@ -261,25 +265,42 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         const { X, Z } = this.ControllerManager.MovingDirection;
         const directionMotion = new Vector3(math.sign(X), 1, math.sign(Z))
 
-        if (!this.IsGrounded())
-        {
-            PrimaryPart.AssemblyLinearVelocity = new Vector3();
-            jumpImpulse = directionMotion.mul(new Vector3(1,AssemblyMass,1));
-        }
-        else
-        
-            jumpImpulse = new Vector3(0, AssemblyMass);
-
         this.SetState(EntityState.Jumping)
         this.Humanoid.ChangeState(Enum.HumanoidStateType.Jumping);
+
+        // this honestly is the free-est way to implement a more strict
+        // coyote time i guess, by allowing them to still jump if they
+        // slide off a platform
         this.WhileInState(this.IsState(EntityState.Midair) ? 0 : 4, EntityState.Jumping).then(() =>
         {
-            this.ClearState(EntityState.Jumping)
-            PrimaryPart.ApplyImpulse(jumpImpulse.mul(this.jumpMultiplier));
-            this.GroundSensor.SensedPart?.ApplyImpulseAtPosition(jumpImpulse.mul(-this.jumpMultiplier), this.GroundSensor.HitFrame.Position)
-        }).catch(() => print("left jumping state"));
+            const ALV = "AssemblyLinearVelocity"
+            const horizontalMovementToAdd = this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
+            const verticalMovementToAdd = new Vector3(0, this.jumpMultiplier, 0);
+
+            const totalAddition = horizontalMovementToAdd.add(verticalMovementToAdd);
+            const currentVelocity = PrimaryPart[ALV].Unit;
+
+            if (currentVelocity.mul(new Vector3(1,0,1)).Dot(totalAddition.Unit) < 0)
+                PrimaryPart[ALV] = totalAddition;
+            else
+                PrimaryPart[ALV] = currentVelocity.add(totalAddition);
+
+
+            const floorRaycast = this.ShootFloorRaycast()
+            if (floorRaycast?.Instance)
+
+                floorRaycast.Instance.ApplyImpulse(floorRaycast.Normal.mul(-this.jumpMultiplier) ?? Vector3.zero)
+        }).finally(() => 
+        {
+            this.ClearState(EntityState.Jumping); 
+        });
 
         return true;
+    }
+
+    public GetCurrentSpeed()
+    {
+        return this.ControllerManager.BaseMoveSpeed * (this.ControllerManager.ActiveController?.MoveSpeedFactor ?? 1);
     }
 
     public CanJump()
@@ -571,11 +592,10 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         super.onTick();
         if (this.CanBeModified())
         {
-            if (this.IsNegative())
-            {
+            if (this.IsNegative() && !this.IsState(EntityState.Jumping)) // you can move in the jumping state
+
                 this.ControllerManager.BaseMoveSpeed = 0;
-                print("no move")
-            }
+
             else 
 
                 this.ControllerManager.BaseMoveSpeed = this.attributes.WalkSpeed;
