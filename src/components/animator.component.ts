@@ -113,20 +113,21 @@ export namespace Animator
             if (typeIs(newState, "number"))
             {
                 const availableAnimationStates = Object.keys(selectedCharacter.Animations)
-                const playingAnimations = availableAnimationStates.filter((e) => (this.attributes.State & e) > 0).sort((a,b) =>
+                const playableAnimations = availableAnimationStates.filter((e) => (this.attributes.State & e) > 0).sort((a,b) =>
                 {
                     const [c,d] = [selectedCharacter.Animations[a]!, selectedCharacter.Animations[b]!];
     
                     return (c.priority ?? Enum.AnimationPriority.Idle).Value < (d.priority ?? Enum.AnimationPriority.Idle).Value;
                 });
 
-                for (const newState of playingAnimations)
+                for (const animationState of playableAnimations)
                 {
                     const newLoadedAnimation = this.LoadAnimation(
                         selectedCharacter.Animations[
-                            newState as keyof typeof selectedCharacter.Animations
+                            animationState as keyof typeof selectedCharacter.Animations
                         ]!,
                     );
+
                     const animationWasInterrupted = false;
                     if (this.currentLoadedAnimation?.IsPlaying())
                     {
@@ -138,14 +139,9 @@ export namespace Animator
                                 newLoadedAnimation.Priority.Value >= (this.currentLoadedAnimation?.Priority.Value ?? 0)
                             )
                             {
-                                if (
-                                    newLoadedAnimation.AnimationId !== this.currentLoadedAnimation?.AnimationId
-                                )
-                                {
-                                    // animationWasInterrupted = true;
-                                    print("0.25 fadetime");
-                                    this.currentLoadedAnimation?.Stop({ FadeTime: 0.25 });
-                                }
+                                // animationWasInterrupted = true;
+                                print("0.25 fadetime");
+                                this.currentLoadedAnimation?.Stop({ FadeTime: 0.25 });
                             }
                             else
                             {
@@ -155,10 +151,17 @@ export namespace Animator
                         }
                     }
 
-                    this.currentLoadedAnimation = newLoadedAnimation;
-                    this.currentLoadedAnimation.Play({
-                        FadeTime: 0,
-                    }).then(() => print("oh yeah we playing"));
+                    if ((this.attributes.State & animationState) >= 1)
+
+                    {
+                        if (this.currentLoadedAnimation !== newLoadedAnimation || !this.currentLoadedAnimation?.IsPlaying())
+                        {
+                            this.currentLoadedAnimation = newLoadedAnimation;
+                            this.currentLoadedAnimation.Play({
+                                FadeTime: 0,
+                            }).then(() => print("oh yeah we playing", ));
+                        }
+                    }
                 }
             }
         }
