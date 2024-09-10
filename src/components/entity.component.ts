@@ -202,7 +202,19 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
                 if ((this.attributes.State & EntityState.Midair) > 0)
                 {
                     this.attributes.State &= ~EntityState.Midair
-                    this.attributes.State |= EntityState.Idle
+                    if (isStateAggressive(this.attributes.State))
+                    {
+                        this.attributes.State |= EntityState.Idle
+                    }
+                    else
+                    {
+                        this.attributes.State |= EntityState.Idle | EntityState.Landing;
+                        this.WhileInState(4, EntityState.Landing).then(() => // TODO: update landing frames to be modifiable
+                        {
+                            this.attributes.State &= ~EntityState.Landing
+                        })
+                    }
+
                 }
 
             } else if ((this.attributes.State & EntityState.Midair) === 0)
@@ -606,16 +618,26 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         super.onStart();
     }
 
+    onPhysics(): void 
+    {
+        super.onPhysics()
+        if (this.CanBeModified())
+
+            if (this.ShouldBeIdleButIsNot())
+
+                this.SetState(EntityState.Idle)
+    }
+
     onTick()
     {
         super.onTick();
         if (this.CanBeModified())
         {
-            if (this.IsNegative() && !this.IsState(EntityState.Jumping)) // you can move in the jumping state
+            if (this.IsNegative() && !this.IsState(EntityState.Jumping, EntityState.Landing)) // you can move in the jumping state
 
                 this.ControllerManager.BaseMoveSpeed = 0;
 
-            else 
+            else
 
                 this.ControllerManager.BaseMoveSpeed = this.attributes.WalkSpeed;
         }
@@ -893,7 +915,6 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
                         .mul(new Vector3(1, 0, 1))
                         .sub(MoveDirection.mul(new Vector3(1, 0, 1))).Unit,
                 );
-                print("facing:", dotProduct, MoveDirection.Magnitude);
 
                 if (dotProduct >= this.facingLeniency)
                     return true;
@@ -904,8 +925,6 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             if (this.IsState(EntityState.Block))
                 return true;
         }
-
-        print("not facing");
 
         return false;
     }
@@ -929,6 +948,11 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
     public IsAttacking()
     {
         return isStateAggressive(this.GetState());
+    }
+
+    protected ShouldBeIdleButIsNot()
+    {
+        return !this.IsNegative() && !this.IsState(EntityState.Crouch, EntityState.Idle, EntityState.Midair)
     }
 
     public IsNeutral()
