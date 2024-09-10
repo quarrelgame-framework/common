@@ -22,20 +22,20 @@ export class DebugService implements OnStart
 
     visualize<T extends object>(component: T) 
     {
-        const [paramsToDebug = [], whenConditional = (() => true)] = Modding.getDecorator<typeof Debug>(component)?.arguments ?? [];
+        const [paramsToDebug = [], whenConditional = (() => true), display = (key: string, value: BaseComponent) => tostring(value.attributes[key as never]) ] = Modding.getDecorator<typeof Debug>(component)?.arguments ?? [];
         const instanceComponent = (component as BaseComponent);
         const scalarSize = 18;
 
         if (paramsToDebug)
         {
             print("Debug Instance:", instanceComponent.instance.Name)
-            const getDebugParamText = (item: string) => `${item}: ${instanceComponent.attributes[item as never]}`;
+            const getDebugParamText = (item: string) => `${item}: ${display(item, instanceComponent)}`;
             let Billboard: BillboardGui | undefined = Make("BillboardGui", {
                 Name: "DebugGui",
                 AlwaysOnTop: true,
                 Children: paramsToDebug?.map((item, idx) => Make("TextLabel", {
                     Name: `DebugLabel:${item}`,
-                    Text: `${item}: ${instanceComponent.attributes[item as never]}`,
+                    Text: `${item}: ${display(item, instanceComponent)}`,
                     TextColor3: new Color3(0,0,0),
                     TextScaled: true,
                     Position: UDim2.fromOffset(0, idx * scalarSize),
