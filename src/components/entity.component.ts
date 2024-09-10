@@ -305,9 +305,16 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         this.WhileInState(this.IsState(EntityState.Midair) ? 0 : 4, EntityState.Jumping).then(() =>
         {
             const ALV = "AssemblyLinearVelocity" // if X + Z are both 0 then this should pass, thus making no horizontal movement
-            const horizontalMovementToAdd = (math.abs(X) + Z === 0) ? Vector3.zero : this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
-            const verticalMovementToAdd = new Vector3(0, this.jumpMultiplier, 0);
+            let nonAxisVectorToNegate = this.ControllerManager.MovingDirection.Cross(new Vector3(0,1,0));
+            let horizontalMovementToAdd; { 
+                const {X, Y, Z} = nonAxisVectorToNegate;
+                const outNegateVector = new Vector3(X === 0 ? 1 : 0,Y === 0 ? 1 : 0, Z === 0 ? 1 : 0)
+                const unprocessedHorizontalMovement = (math.abs(X) + Z === 0) ? Vector3.zero : this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
 
+                horizontalMovementToAdd = unprocessedHorizontalMovement.mul(outNegateVector)
+            }
+
+            const verticalMovementToAdd = new Vector3(0, this.jumpMultiplier, 0);
             const totalAddition = horizontalMovementToAdd.add(verticalMovementToAdd);
             const currentVelocity = PrimaryPart[ALV].Unit;
 
