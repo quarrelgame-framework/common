@@ -115,7 +115,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         }
 
         this.raycastParams.FilterType = Enum.RaycastFilterType.Exclude;
-        this.raycastParams.AddToFilter([ this.instance, Workspace.CurrentCamera ?? this.instance ]);
+        this.raycastParams.AddToFilter([ this.instance, Workspace.CurrentCamera ].filterUndefined());
 
         this.ControllerManager.GroundSensor = this.GroundSensor;
         this.ControllerManager.ClimbSensor = this.ClimbSensor;
@@ -200,12 +200,16 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
             if (this.GroundSensor.SensedPart)
             {
                 if ((this.attributes.State & EntityState.Midair) > 0)
-
+                {
                     this.attributes.State &= ~EntityState.Midair
+                    this.attributes.State |= EntityState.Idle
+                }
 
             } else if ((this.attributes.State & EntityState.Midair) === 0)
-
+            {
                 this.attributes.State |= EntityState.Midair
+                this.attributes.State &= ~EntityState.Idle
+            }
 
             if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
             {
@@ -262,7 +266,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         const { AssemblyMass } = PrimaryPart;
         let jumpImpulse = Vector3.zero;
 
-        const { X, Z } = this.ControllerManager.MovingDirection;
+        const { X, Y, Z } = this.ControllerManager.MovingDirection;
         const directionMotion = new Vector3(math.sign(X), 1, math.sign(Z))
 
         this.SetState(EntityState.Jumping)
@@ -273,8 +277,8 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         // slide off a platform
         this.WhileInState(this.IsState(EntityState.Midair) ? 0 : 4, EntityState.Jumping).then(() =>
         {
-            const ALV = "AssemblyLinearVelocity"
-            const horizontalMovementToAdd = this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
+            const ALV = "AssemblyLinearVelocity" // if X + Z are both 0 then this should pass, thus making no horizontal movement
+            const horizontalMovementToAdd = (math.abs(X) + Z === 0) ? Vector3.zero : this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
             const verticalMovementToAdd = new Vector3(0, this.jumpMultiplier, 0);
 
             const totalAddition = horizontalMovementToAdd.add(verticalMovementToAdd);
@@ -555,7 +559,22 @@ export interface EntityAttributes extends EntityBaseAttributes
         State: EntityState.Idle,
     },
 })
-@Debug(["AirJumps", "AirOptions", "AirDashes", "EntityId"], (() => RunService.IsClient()))
+@Debug(
+    ["AirJumps", "AirOptions", "AirDashes", "EntityId", "State"], 
+    (() => RunService.IsClient()),
+    (key, entity) => 
+    {
+
+        const _entity = entity as unknown as Entity
+        if (key === "State")
+        {
+            const states = _entity.GetCurrentStates();
+            const out = states.reduce((a,e) => `${a}${EntityState[e] ?? e},`, '').sub(0,-2);
+            return out;
+        }
+            
+        return tostring(_entity.attributes[key as never]);
+    })
 export class Entity<I extends EntityAttributes = EntityAttributes> extends EntityBase<I, ICharacter> implements OnStart, OnTick, OnPhysics
 {
     constructor(protected readonly CharacterManager: CharacterManager, protected readonly SkillManager: SkillManager, protected readonly schedulerService: SchedulerService)
