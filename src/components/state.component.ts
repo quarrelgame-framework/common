@@ -162,7 +162,7 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
         ])
     }
 
-    public PrintState(k: EntityState[] = [
+    public GetCurrentStates(k: EntityState[] = [
         // FIX: this ugly fucking thing
         EntityState.Idle,
         EntityState.Midair,
@@ -180,6 +180,6 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
         EntityState.Recovery,
     ])
     {
-        print(k.filter((e) => this.IsState(e)).reduce((a,e) => `${a}${EntityState[e]},`, '').sub(0,-2));
+        return k.filter((e) => this.IsState(e));
     }
 }
