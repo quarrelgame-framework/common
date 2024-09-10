@@ -615,9 +615,13 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
 
         if (this.IsNegative())
+        {
+            if (this.attributes.HitStun <= 0)
+
+                this.instance.PrimaryPart.AssemblyAngularVelocity = Vector3.zero;
 
             this.ControllerManager.BaseTurnSpeed = 0;
-
+        }
         else this.ControllerManager.BaseTurnSpeed = 9.5;
     }
 
@@ -799,7 +803,13 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
                 }
 
                 return undefined;
-            })).then((skills) => skills[0]).then((skill) => skill?.FrameData.Execute(this, skill).then(res).catch(rej))
+            })).then((skills) => skills[0]).then((skill) => {
+                if (skill)
+                
+                    this.instance.PivotTo(CFrame.lookAlong(this.instance.GetPivot().Position, this.ControllerManager.FacingDirection))
+
+                skill?.FrameData.Execute(this, skill).then(res).catch(rej)
+            })
         });
     }
 
