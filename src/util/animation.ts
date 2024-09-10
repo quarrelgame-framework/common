@@ -239,7 +239,12 @@ export namespace Animation
 
         public IsPlaying(): boolean
         {
-            return !!(this.linkedAnimation && this.linkedAnimation.IsPlaying()) || this.AnimationTrack.IsPlaying;
+            return this.IsLinkPlaying() || this.AnimationTrack.IsPlaying;
+        }
+
+        public IsLinkPlaying()
+        {
+            return !!(this.linkedAnimation && this.linkedAnimation.IsPlaying());
         }
 
         public IsPaused(): boolean
