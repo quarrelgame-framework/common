@@ -106,13 +106,13 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
     /* Returns true if any of the states match with the current.*/
     public IsState(...states: number[]): boolean
     {
-        return states.some((e) => (e & this.attributes.State) > 1);
+        return states.some((e) => (e & this.attributes.State) >= 1);
     }
 
     /* Returns true if all of the states match with the current.*/
-    public IsStateExclusive(...states: number[]): boolean
+    public IsEveryState(...states: number[]): boolean
     {
-        return states.every((e) => (e & this.attributes.State) > 1);
+        return states.every((e) => (e & this.attributes.State) >= 1);
     }
 
     public IsDefaultState(): boolean
