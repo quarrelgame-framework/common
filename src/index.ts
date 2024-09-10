@@ -23,6 +23,5 @@ export * from "util/dogtag";
 export * from "util/identifier";
 export * from "util/input";
 export * from "util/model";
-export * from "util/story";
 
 export * from "network";
