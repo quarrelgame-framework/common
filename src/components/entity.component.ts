@@ -609,7 +609,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
             this.RemoveState(EntityState.Hitstun);
 
-        if (this.attributes.BlockStun)
+        if (this.attributes.BlockStun > 0)
 
             this.attributes.BlockStun -= 1;
 
