@@ -448,7 +448,12 @@ export function isStateNegative(state: number, excludeStates: number | EntitySta
 
 export function isStateCounterable(state: number)
 {
-    return [ EntityState.Startup, EntityState.Attack ].some((v) => (state & v) > 0);
+    return [ EntityState.Startup ].some((v) => (state & v) > 0);
+}
+
+export function isStatePunishable(state: number)
+{
+    return [ EntityState.Attack, EntityState.Recovery ].some((v) => (state & v) > 0);
 }
 
 export function isStateAggressive(state: number)
