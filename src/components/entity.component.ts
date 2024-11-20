@@ -47,6 +47,16 @@ export interface EntityBaseAttributes extends StateAttributes {
      */
     IsServerEntity: boolean,
     State: number,
+
+    /*
+     * Determines whether the entity
+     * will be managed by the Entity
+     * component or not.
+     *
+     * The component will still be
+     * active.
+     */
+    ControlDelegated: boolean,
 }
 
 export const EntityBaseDefaults = {
@@ -56,6 +66,7 @@ export const EntityBaseDefaults = {
     WalkSpeed: 8,
 
     IsServerEntity: false,
+    ControlDelegated: false,
     State: EntityState.Idle,
 }
 
@@ -238,33 +249,36 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
                 this.ClearState(EntityState.Walk, EntityState.Idle)
             }
 
-            if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
+            if (!this.attributes.ControlDelegated)
             {
-                this.Humanoid.ChangeState(Enum.HumanoidStateType.Running);
-                this.ControllerManager.ActiveController = this.GroundController;
+                if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
+                {
+                    this.Humanoid.ChangeState(Enum.HumanoidStateType.Running);
+                    this.ControllerManager.ActiveController = this.GroundController;
+                }
+                else if ((!this.GroundSensor.SensedPart && !this.AirController.Active) || this.Humanoid.GetState() === Enum.HumanoidStateType.Jumping)
+                {
+                    if (this.IsState(EntityState.Crouch))
+
+                        this.Crouch(false)
+
+                    this.Humanoid.ChangeState(Enum.HumanoidStateType.Freefall);
+                    this.ControllerManager.ActiveController = this.AirController;
+                }
+
+                this.GroundController.MoveSpeedFactor = math.max(0, TotalMoveSpeedFactor);
             }
-            else if ((!this.GroundSensor.SensedPart && !this.AirController.Active) || this.Humanoid.GetState() === Enum.HumanoidStateType.Jumping)
-            {
-                if (this.IsState(EntityState.Crouch))
-
-                    this.Crouch(false)
-
-                this.Humanoid.ChangeState(Enum.HumanoidStateType.Freefall);
-                this.ControllerManager.ActiveController = this.AirController;
-            }
-
-            this.GroundController.MoveSpeedFactor = math.max(0, TotalMoveSpeedFactor);
         }
 
         debug.profileend()
     }
+
 
     public Crouch(crouchState: boolean = ((this.attributes.State & EntityState.Crouch) > 0)) {
         if (!this.CanBeModified())
 
             return;
 
-        // print("lololololololololol", this.GetState(), crouchState)
         if (crouchState)
         {
             if (this.IsGrounded())
@@ -305,13 +319,20 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         this.WhileInState(this.IsState(EntityState.Midair) ? 0 : 4, EntityState.Jumping).then(() =>
         {
             const ALV = "AssemblyLinearVelocity" // if X + Z are both 0 then this should pass, thus making no horizontal movement
-            let nonAxisVectorToNegate = this.ControllerManager.MovingDirection.Cross(new Vector3(0,1,0));
+            let nonAxisVectorToNegate
             let horizontalMovementToAdd; { 
-                const {X, Y, Z} = nonAxisVectorToNegate;
-                const outNegateVector = new Vector3(X === 0 ? 1 : 0,Y === 0 ? 1 : 0, Z === 0 ? 1 : 0)
+                const _vec = this.ControllerManager.MovingDirection.Cross(new Vector3(0,1,0));
+                const {X, Y, Z} = _vec;
+                const outNegateVector = nonAxisVectorToNegate = new Vector3(X === 0 ? 1 : 0,Y === 0 ? 1 : 0, Z === 0 ? 1 : 0)
                 const unprocessedHorizontalMovement = (math.abs(X) + Z === 0) ? Vector3.zero : this.ControllerManager.MovingDirection.mul(this.GetCurrentSpeed()).mul(new Vector3(1,0,1));
 
-                horizontalMovementToAdd = unprocessedHorizontalMovement.mul(outNegateVector)
+                if (X + Y + Z !== 0)
+
+                    horizontalMovementToAdd = unprocessedHorizontalMovement.mul(outNegateVector)
+
+                else
+
+                    horizontalMovementToAdd = Vector3.zero
             }
 
             const verticalMovementToAdd = new Vector3(0, this.jumpMultiplier, 0);
@@ -319,9 +340,10 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
             const currentVelocity = PrimaryPart[ALV].Unit;
 
             if (currentVelocity.mul(new Vector3(1,0,1)).Dot(totalAddition.Unit) < 0)
+            
                 PrimaryPart[ALV] = totalAddition;
             else
-                PrimaryPart[ALV] = currentVelocity.add(totalAddition);
+                PrimaryPart[ALV] = currentVelocity.add(totalAddition).mul(nonAxisVectorToNegate);
 
 
             const floorRaycast = this.ShootFloorRaycast()
