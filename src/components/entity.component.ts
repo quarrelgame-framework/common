@@ -204,23 +204,20 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
                     this.attributes.State &= ~EntityState.Midair
                     if (isStateAggressive(this.attributes.State))
                     {
-                        this.attributes.State |= EntityState.Idle
+                        this.AddState(EntityState.Idle)
                     }
                     else
                     {
-                        this.attributes.State |= EntityState.Idle | EntityState.Landing;
+                        this.SetState(EntityState.Idle, EntityState.Landing)
                         this.WhileInState(4, EntityState.Landing).then(() => // TODO: update landing frames to be modifiable
                         {
-                            this.attributes.State &= ~EntityState.Landing
+                            this.ClearState(EntityState.Landing)
                         })
                     }
-
                 }
-
-            } else if ((this.attributes.State & EntityState.Midair) === 0)
             {
-                this.attributes.State |= EntityState.Midair
-                this.attributes.State &= ~EntityState.Idle
+                this.AddState(EntityState.Midair)
+                this.ClearState(EntityState.Walk, EntityState.Idle)
             }
 
             if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
