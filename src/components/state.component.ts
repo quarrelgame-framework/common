@@ -49,7 +49,8 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
 
     private doStateFunctions(state: number, force = false)
     {
-        task.spawn(() => {
+        task.spawn(() => 
+        {
             if (!this.IsState(state))
 
                 this.attributes.State |= state;
@@ -59,38 +60,35 @@ export class StatefulComponent<A extends StateAttributes, I extends Instance> ex
         });
     }
 
-    public SetState(state: EntityState): boolean
+    public SetState(...states: EntityState[])
     {
-        if (!this.IsState(state))
-        {
-            this.ForceState(state);
-            return true;
-        }
+        for (const state of states)
 
-        return false;
+            this.ForceState(state)
+
+        return true;
     }
 
-    public AddState(state: EntityState): boolean
+    public AddState(...states: EntityState[])
     {
-        return this.SetState(state);
+        return this.SetState(...states);
     }
 
-    public ClearState(state: EntityState)
+    public ClearState(...states: EntityState[])
     {
-        if (this.IsState(state))
-        {
+        for (const state of states)
             // TODO: maybe add support for leaving state effects? idk
-            this.attributes.State &= ~state;
-            return true;
-        }
+            if (this.IsState(state))
 
-        return false;
+                this.attributes.State &= ~state;
+
+        return true;
     }
 
 
-    public RemoveState(state: EntityState)
+    public RemoveState(...states: EntityState[])
     {
-        return this.ClearState(state);
+        return this.ClearState(...states);
     }
 
     public ForceState(state: EntityState): void
