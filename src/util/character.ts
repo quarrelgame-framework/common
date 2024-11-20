@@ -381,6 +381,8 @@ export namespace Skill
 
          Effects: [frame: number, effectRunner: (entity: Entity, skill: Skill) => unknown][]
 
+         Condition: (entity: Entity, skill: Skill) => boolean;
+
          Hitbox: Hitbox.Hitbox;
     }
 
@@ -464,7 +466,14 @@ export namespace Skill
           */
          public readonly Effects;
 
-         constructor({ Startup, Recovery, Effects, HitStun, BlockStun, BlockAdvantage, Active, Animation, Hitbox, Contact }: FrameDataClassProps)
+         /**
+          * The Condition required
+          * for the Frame Data
+          * to run.
+          */
+         public readonly Condition: FrameDataClassProps["Condition"] = () => true;
+
+         constructor({ Startup, Recovery, Effects, HitStun, BlockStun, BlockAdvantage, Active, Animation, Hitbox, Contact, Condition }: FrameDataClassProps)
          {
              super();
 
@@ -477,7 +486,17 @@ export namespace Skill
              this.Animation = Animation as Readonly<NonNullable<Animation.AnimationData>>;
              this.Hitbox = Hitbox;
              this.Contact = Contact;
+             this.Condition = Condition;
              this.Effects = Effects;
+         }
+
+         public Cancel(entity: Entity, skill: Skill)
+         {
+            const entityAnimation = entity.Animator.LoadAnimation(this.Animation!);
+            if (entity.attributes.PreviousSkill === skill.Id && (entityAnimation.IsPlaying()))
+            
+                entity.attributes.PreviousSkill = undefined;
+
          }
 
          public async Execute<
@@ -485,6 +504,16 @@ export namespace Skill
              K extends Entity<I>,
          >(entity: K, skill: Skill, gameMetadata: QuarrelGameMetadata = Dependency<QuarrelGameMetadata>(), linkedSkill?: Skill): Promise<HitData<Entity, Entity>>
          {
+             if (!this.Condition(entity, skill))
+             {
+                 entity.ClearState(EntityState.Attack);
+                 return {
+                     attacker: entity,
+                     attacked: undefined,
+                     hitResult: HitResult.Unknown,
+                 }
+             }
+
              if (linkedSkill && entity.IsState(EntityState.Attack))
 
                  entity.ClearState(EntityState.Attack);
@@ -505,6 +534,9 @@ export namespace Skill
                      lastSkillAnimation.Stop(0);
              }
 
+             const skillIsStillExecuting = () =>
+                entity.attributes.PreviousSkill === skill.Id;
+
              return new Promise<HitData<Entity, Entity>>((res) =>
              {
                  let totalWaitedFrames = 0;
@@ -518,7 +550,7 @@ export namespace Skill
                          {
                              for (let i = 0; i < frames; i++)
                              {
-                                 if (entity.attributes.PreviousSkill !== skill.Id)
+                                 if (!skillIsStillExecuting())
 
                                      break;
 
@@ -550,22 +582,25 @@ export namespace Skill
                      let attackDidLand;
                      let onContact: RBXScriptConnection | void;
 
-                     const activeHitbox = this.Hitbox.Initialize(entity.GetPrimaryPart(), skill);
-                     entity.SetState(EntityState.Attack);
-                     onContact = activeHitbox.Contact.Connect(({
-                         Attacker,
-                         Attacked,
-                     }) =>
+                     if (skillIsStillExecuting())
                      {
-                         task.spawn(() => attackDidLand = Attacker.onSkillContact(Attacked, skill) ?? HitResult.Whiffed);
-                         Attacked.onSkillContact(Attacker, skill);
-                     });
+                         const activeHitbox = this.Hitbox.Initialize(entity.GetPrimaryPart(), skill);
+                         entity.SetState(EntityState.Attack);
+                         onContact = activeHitbox.Contact.Connect(({
+                             Attacker,
+                             Attacked,
+                         }) =>
+                         {
+                             task.spawn(() => attackDidLand = Attacker.onSkillContact(Attacked, skill) ?? HitResult.Whiffed);
+                             Attacked.onSkillContact(Attacker, skill);
+                         });
 
-                     await waitFrames(this.ActiveFrames);
-                     activeHitbox.Stop();
-                     onContact = onContact?.Disconnect();
+                         await waitFrames(this.ActiveFrames);
+                         activeHitbox.Stop();
+                         onContact = onContact?.Disconnect();
+                     }
 
-                     if (skill.LinksInto)
+                     if (skill.LinksInto && skillIsStillExecuting())
                      {
                            let linksInto;
                            if (typeIs(skill.LinksInto, "function"))
@@ -583,34 +618,39 @@ export namespace Skill
                           return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
                      }
 
+                     const skillExecutingNow = skillIsStillExecuting();
                      entity.ClearState(EntityState.Attack);
 
-                     if (this.RecoveryFrames > 0)
+                     if (this.RecoveryFrames > 0 && skillExecutingNow)
                      {
+                         if (animatorAnimation?.IsPlaying())
+
+                             animatorAnimation.Stop({FadeTime: 0});
+
                          entity.SetState(EntityState.Recovery);
                          await waitFrames(math.max(this.RecoveryFrames - (attackDidLand === HitResult.Blocked ? skill.FrameData.BlockAdvantageFrames : 0), 0));
                          entity.ClearState(EntityState.Recovery);
-                     }
-
+                     } 
                      if (animatorAnimation?.IsPlaying())
-                     {
-                        let animationLinked = animatorAnimation;
-                        while (true)
-                        {
-                            if (animationLinked.AnimationTrack.IsPlaying)
-                            {
-                                if (animationLinked.AnimationTrack.Looped)
-                                    
-                                    animationLinked.Stop({FadeTime: 0});
-                            }
-                            const linked = animationLinked.GetLinked()
-                            animationLinked = linked ?? animationLinked;
-
-                            if (!linked)
-
-                                break;
-                        }
-                     }
+                     
+                        animatorAnimation.Stop({FadeTime: 0});
+                        // let animationLinked = animatorAnimation;
+                        // while (true)
+                        // {
+                        //     if (animationLinked.AnimationTrack.IsPlaying)
+                        //     {
+                        //         if (animationLinked.AnimationTrack.Looped)
+                        //             
+                        //             animationLinked.Stop({FadeTime: 0});
+                        //     }
+                        //     const linked = animationLinked.GetLinked()
+                        //     animationLinked = linked ?? animationLinked;
+                        //
+                        //     if (!linked)
+                        //
+                        //         break;
+                        // }
+                     
 
                      return res({
                          attacker: entity,
@@ -651,6 +691,8 @@ export namespace Skill
 
          private Effects: FrameData["Effects"] = [];
 
+         private Condition: FrameDataClassProps["Condition"] = () => true;
+
          private Hitbox?: Hitbox.Hitbox;
 
          /**
@@ -683,6 +725,17 @@ export namespace Skill
              this.Active = active;
 
              return this;
+         }
+
+         /*
+          * Set the condition required for the frame data
+          * to run.
+          */
+         public SetCondition(condition: FrameDataClassProps["Condition"]) 
+         {
+            this.Condition = condition;
+
+            return this;
          }
 
          /**
@@ -771,7 +824,7 @@ export namespace Skill
           */
          public Construct()
          {
-             const { Active, Startup, Recovery, HitStun, BlockAdvantage, BlockStun, Animation, Hitbox, Contact, Effects } = this;
+             const { Active, Startup, Recovery, HitStun, BlockAdvantage, BlockStun, Animation, Hitbox, Contact, Condition, Effects } = this;
              assert(Hitbox, "Builder incomplete! Hitbox not defined.");
 
              return new FrameData({
@@ -781,6 +834,7 @@ export namespace Skill
                  BlockStun,
                  HitStun,
                  Contact,
+                 Condition,
                  Active,
                  Animation,
                  Effects,
@@ -822,6 +876,7 @@ export namespace Skill
       */
     export class Skill
     {
+
          constructor(
              destructorParams: SkillClassProps
          )
