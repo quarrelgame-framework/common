@@ -359,6 +359,16 @@ export enum EntityState
 export enum HitResult
 {
     /**
+     * If the attack was
+     * canceled.
+     */
+    Canceled,
+    /**
+     * If the attack was
+     * not able to be ran.
+     */
+    Unknown,
+    /**
      * If the attack missed.
      */
     Whiffed,
