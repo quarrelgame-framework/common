@@ -140,7 +140,7 @@ export namespace Animator
                             )
                             {
                                 // animationWasInterrupted = true;
-                                print("0.25 fadetime");
+                                // print("0.25 fadetime");
                                 this.currentLoadedAnimation?.Stop({ FadeTime: 0.25 });
                             }
                             else
@@ -159,7 +159,7 @@ export namespace Animator
                             this.currentLoadedAnimation = newLoadedAnimation;
                             this.currentLoadedAnimation.Play({
                                 FadeTime: 0,
-                            }).then(() => print("oh yeah we playing", ));
+                            });
                         }
                     }
                 }
