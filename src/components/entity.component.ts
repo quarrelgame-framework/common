@@ -215,6 +215,24 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
                         })
                     }
                 }
+                else
+                {
+                    if (!this.IsState(EntityState.Landing, EntityState.Jumping))
+                    {
+                        if (this.IsGrounded() && this.GetCurrentSpeed() > 0)
+                        {
+                            if (this.ControllerManager.MovingDirection.mul(new Vector3(1,0,1)).Magnitude > 0)
+                            {
+                                this.AddState(EntityState.Walk);     //   here it comes
+                            }
+                            else this.ClearState(EntityState.Walk)//   sun
+                        }
+                        else this.ClearState(EntityState.Walk) //  sun
+                    } 
+                    else this.ClearState(EntityState.Walk)  // sun
+                }
+            } 
+            else if ((this.attributes.State & EntityState.Midair) === 0)
             {
                 this.AddState(EntityState.Midair)
                 this.ClearState(EntityState.Walk, EntityState.Idle)
