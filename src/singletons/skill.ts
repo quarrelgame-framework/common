@@ -46,13 +46,12 @@ export class SkillManager implements OnStart, OnInit
     public RegisterSkill(skillId: string, skill: Skill.Skill)
     {
         assert(!this._skills.has(skillId), `skill id ${skillId} already exists`);
-        print(`Skill ${skill.Name} (${skillId}) added.`)
+        print(`Skill ${skill.Name} (${skillId}) added as ${skillId}.`)
 
-        this._skills.set(skillId, skill);
+        this._skills.set(skillId, skill); 
         for (const listener of this.listeners)
 
             listener.onSkillRegistered(skillId, skill);
-
     }
 
 }

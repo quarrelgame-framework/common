@@ -33,7 +33,10 @@ export const QGCharacter = Modding.createDecorator<[{id?: string, skills: [skill
     const objectIdentifier: string | undefined = id ?? Reflect.getMetadata(descriptor.object, "identifier");
     assert(objectIdentifier, `unable to get metadatum 'identifier' from object ${descriptor.object}`);
 
-    Reflect.defineMetadata(descriptor.object, "qgf.character.setup", setup ?? undefinedSetupFunction);
+    Reflect.defineMetadataBatch(descriptor.object, {
+        ["qgf.id"]: objectIdentifier,
+        ["qgf.character.setup"]: setup ?? undefinedSetupFunction,
+    });
 
     const arbitraryCharacter = new (descriptor.object as new () => Character.Character)();
     rawset(arbitraryCharacter, "Skills", mapFromMapLike);
