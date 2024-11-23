@@ -21,10 +21,14 @@ export const QGCharacter = Modding.createDecorator<[{id?: string, skills: [skill
     {
         if (typeIs(rawget(attack, "new"), "function"))
         {
-            const SkillIdentifier = Reflect.getMetadata(attack, "identifier") as string;
+            const SkillIdentifier = (attack as Pick<Skill.Skill, "Id">).Id as string ?? Reflect.getMetadata(attack, "qgf.id") as string;
+            const foundSkill = SkillIdentifier && skillManager.GetSkill(SkillIdentifier);
             assert(SkillIdentifier, `could not get skill identifier from ${attack}`)
-
-            return [skill, skillManager.GetSkill(SkillIdentifier)!];
+            if (!foundSkill)
+                
+                throw `Skill '${SkillIdentifier}' is not registered (character '${id}').`
+            
+            return [skill, foundSkill];
         }
 
         return [skill, attack];
