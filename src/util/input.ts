@@ -161,7 +161,25 @@ export function validateMotion(input: (Motion | Input)[], character: Pick<Charac
 {
     const currentMotion = [ ...input ];
     const decompiledAttacks = [...character.Skills]
-    const matchingAttacks = decompiledAttacks.filter(([motionInput]) => 
+    if (currentMotion[0] !== Motion.Neutral)
+    
+        currentMotion.unshift(Motion.Neutral);
+    
+    print("character skills:", character.Skills);
+    const matchingAttacks = decompiledAttacks.map(([a,b]) => {
+        if (typeIs(b, "function"))
+        {
+            if (skillFetcherArguments)
+            {
+                const [ thisEntity, entityList ] = skillFetcherArguments;
+                return [a,b(thisEntity, new Set(entityList))] as const;
+            }
+
+            return [a, b()] as const;
+        }
+
+        return [a,b] as const;
+    }).filter(([motionInput, skillLike]) => 
     {
         let motionSet: MotionInput;
         if ( motionInput.includes(Motion.Neutral) ) 
@@ -178,28 +196,34 @@ export function validateMotion(input: (Motion | Input)[], character: Pick<Charac
             motionSet = currentMotion.filter((e) => e !== Motion.Neutral); // filter all neutrals 
 
         if (motionSet.size() < motionInput.size())
-
-            return;
+        {
+            print(`Motion set for skill ${skillLike.Name} is shorter (${motionSet.size()}) than the queued motion input (${motionInput.size()}). Skipping.`);
+            return false;
+        }
 
              
         if (motionSet.size() === 0)
-
+        {
+            print(`Motion set for skill ${skillLike.Name} is zero.`);
             return;
+        }
 
         for (let i = motionInput.size() - 1; i >= 0; i--)
-
+        {
             if (motionInput[i] !== motionSet[motionSet.size() - (motionInput.size() - i)])
-
-                // print(`motion failed: ${motionInput[i]} !== ${motionSet[i]}`);
+            {
+                print(`motion failed: ${motionInput[i]} !== ${motionSet[i]}`);
                 return false;
+            }
+        }
 
-
-        // print(`motion passed: ${this.stringifyMotionInput(motionInput)} === ${this.stringifyMotionInput(motionSet)}`);
+        print(`motion passed: ${stringifyMotionInput(motionInput)} === ${stringifyMotionInput(motionSet)}`);
         return true;
     });
 
-    const [entity, entities] = skillFetcherArguments ?? [];
-    return matchingAttacks.filter((e) => typeIs(e[1], "function") ? e[1](entity, entities ? new Set(entities) : undefined).GaugeRequired <= maxHeat : e[1].GaugeRequired <= maxHeat);
+    const output = matchingAttacks.filter((e) => e[1].GaugeRequired <= maxHeat);
+    print("output:", output);
+    return output;
 }
 
 export function stringifyMotionInput(motionInput: MotionInput)
