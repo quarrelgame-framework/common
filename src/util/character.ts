@@ -881,7 +881,6 @@ export namespace Skill
              destructorParams: SkillClassProps
          )
          {
-             const skillManager = Modding.resolveSingleton<SkillManager>(SkillManager);
              const { Name, Description, FrameData, GroundedType, IsReversal, CanCounter, GaugeRequired, SkillType, LinksInto, Gatlings, Rekkas } = destructorParams ?? this;
 
 
@@ -896,16 +895,12 @@ export namespace Skill
              this.LinksInto = LinksInto;
              this.Gatlings = Gatlings;
              this.Rekkas = Rekkas;
-
-             if (!skillManager.SkillExists(this.Id))
-
-                skillManager.RegisterSkill(this.Id, this)
          }
 
          /**
           * The ID of the skill.
           */
-         public readonly Id = Identifier.Generate();
+         public readonly Id!: string;
 
          /**
           * The name of the skill.
@@ -1187,7 +1182,15 @@ export namespace Skill
              assert(Description !== undefined, "Builder incomplete! Description is unset.");
              assert(FrameData, "Builder incomplete! Frame Data is unset.");
 
-             return new Skill({
+             const skillManager = Modding.resolveSingleton<SkillManager>(SkillManager);
+             /*
+              * TODO: find a way to have rekka skills, link skills
+              * and builder-constructed skills be logged automatically 
+              * or decorated in-line
+              * and the remove this
+              */
+
+             const skillOutput = new Skill({
                  Name,
                  Description,
                  FrameData,
@@ -1200,6 +1203,12 @@ export namespace Skill
                  Rekkas,
                  LinksInto,
              });
+
+             // add Id, character class doesn't take care of this
+             rawset(skillOutput, "Id", skillOutput.Id ?? Identifier.Generate());
+             skillManager.RegisterSkill(skillOutput.Id, skillOutput)
+
+             return skillOutput;
          }
     }
 }
