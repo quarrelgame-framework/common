@@ -1,5 +1,10 @@
 import { Entity } from "components/entity.component";
-import Character, { Skill, SkillLike } from "util/character";
+import Character, { SkillLike } from "util/character";
+
+/**
+ * Holds information about an input and how long it was held for. 
+*/
+export type HeldInputDescriptor = [ inputBitFlag: number, inputHeldDuration: number ];
 
 /**
  * The medium the User is using
@@ -16,14 +21,13 @@ export enum InputType
  */
 export enum InputMode
 {
-    Release = Enum.UserInputState.End.Value,
-    Press = Enum.UserInputState.Begin.Value,
-    Up = InputMode["Release"],
-    Down = InputMode["Press"],
+    Release = 0x800,
+    Press = 0x1000,
+    Up = Release,
+    Down = Press,
 }
 
-/**
- * Whether the input was allowed
+/** Whether the input was allowed
  * or denied.
  */
 export enum InputResult
@@ -53,17 +57,23 @@ export type CommandNormal = [Motion, Input];
  */
 export enum Input
 {
-    Dash = "DS",
-    Dust = "DT",
-    Sweep = "SP",
+    /* TODO: Turn into Normal1 */
+    Punch = 0x10,
+    /* TODO: Turn into Normal2 */
+    Kick = 0x20,
+    /* TODO: Turn into Normal3 */
+    Slash = 0x40,
+    /* TODO: Turn into Normal4 */
+    Heavy = 0x80,
 
-    Punch = "P",
-    Kick = "K",
-    Slash = "S",
-    Heavy = "HS",
+    /* TODO: Turn into ComboExtender */
+    Roman = 0x100,
 
-    Roman = "RC",
-    Burst = "BR",
+    /* TODO: Turn into Special1 */
+    Dust = 0x400,
+
+    Dash = 0x800,
+    Burst = 0x200,
 }
 
 /**
@@ -71,15 +81,12 @@ export enum Input
  */
 export enum Motion
 {
-    DownBack = 1,
-    Down = 2,
-    DownForward = 3,
-    Back = 4,
-    Neutral = 5,
-    Forward = 6,
-    UpBack = 7,
-    Up = 8,
-    UpForward = 9,
+                   Up = 0x02,
+    Back = 0x04, Neutral = 0x01, Forward = 0x06,
+                  Down = 0x08, 
+
+    UpBack = Up | Back, UpForward = Up | Forward,
+    DownBack = Down | Back, DownForward = Down | Forward
 }
 
 const rawDirectionMap: (readonly [Vector3, Motion])[] = ([
@@ -148,6 +155,11 @@ function temporarySwap(array: unknown[])
     return array;
 }
 
+export function standardizeMotion(input: (number | HeldInputDescriptor)[]): HeldInputDescriptor[]
+{
+    return input.map((e) => typeIs(e, "number") ? [e, -1] : e);
+}
+
 /**
  * Search `character`'s skills and return an array of
  * all skills that are similar to `motion`, sorted
@@ -157,13 +169,13 @@ function temporarySwap(array: unknown[])
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (Motion | Input)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
+export function validateMotion(input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
 {
-    const currentMotion = [ ...input ];
-    const decompiledAttacks = [...character.Skills]
-    if (currentMotion[0] !== Motion.Neutral)
+    const currentMotion = standardizeMotion(input);
+    const decompiledAttacks = [...character.Skills].map(([a,b]) => [standardizeMotion(a), b]) as [MotionInput, SkillLike][];
+    if ((currentMotion[0][0] & Motion.Neutral) === 0)
     
-        currentMotion.unshift(Motion.Neutral);
+        currentMotion.unshift([Motion.Neutral, -1]);
     
     print("character skills:", character.Skills);
     const matchingAttacks = decompiledAttacks.map(([a,b]) => {
@@ -181,19 +193,23 @@ export function validateMotion(input: (Motion | Input)[], character: Pick<Charac
         return [a,b] as const;
     }).filter(([motionInput, skillLike]) => 
     {
-        let motionSet: MotionInput;
-        if ( motionInput.includes(Motion.Neutral) ) 
+        let motionSet: HeldInputDescriptor[];
+        // if the attack inputs provided by the character
+        // specify a neutral, then prefix the move with
+        // neutral.
+        if (motionInput.find((e) => e[0] === Motion.Neutral))
         {
             const set = [ ... currentMotion ];
-            if (set[0] !== Motion.Neutral)
+            if (set[0][0] !== Motion.Neutral)
 
-                set.unshift(Motion.Neutral); // make sure the motion starts with 5 if it doesn't already
+                set.unshift([Motion.Neutral, -1]); // make sure the motion starts with 5 if it doesn't already
 
-            motionSet = set.filter((e, k, a) => !(a[k - 1] === Motion.Neutral && e === Motion.Neutral)); // remove duplicates
+            motionSet = set.filter((e, k, a) => !(a[k - 1][0] === Motion.Neutral && e[0] === Motion.Neutral)); // remove duplicates
         }
         else
 
-            motionSet = currentMotion.filter((e) => e !== Motion.Neutral); // filter all neutrals 
+            // TODO: only remove neutrals that aren't specified in the motion set
+            motionSet = currentMotion.filter((e) => e[0] !== Motion.Neutral); // filter all neutrals 
 
         if (motionSet.size() < motionInput.size())
         {
@@ -208,11 +224,31 @@ export function validateMotion(input: (Motion | Input)[], character: Pick<Charac
             return;
         }
 
+        // run the motion input in reverse
+        // because extra motions / inputs
+        // might have been queued
         for (let i = motionInput.size() - 1; i >= 0; i--)
         {
-            if (motionInput[i] !== motionSet[motionSet.size() - (motionInput.size() - i)])
+            // TODO: have some form of input leniency here by checking some kind of environment variabled
+            // if leniency is on, check if the user's input contains the motion set input 
+            // (so the user's DownLeft would pass for Down UNLESS the next input is down)
+            //  
+            // otherwise, just do direct comparison
+            //
+            const previousIndex = motionSet.size() - (motionInput.size() - i);
+            if ((motionInput[i][0] & motionSet[previousIndex][0]) === 0) // lenient case
             {
-                print(`motion failed: ${motionInput[i]} !== ${motionSet[i]}`);
+                print(`motion failed: ${motionInput[i][0]} !& ${motionSet[previousIndex][0]}`);
+                return false;
+            } else if (motionSet[i - 1] && (motionSet[i - 1][0] & motionSet[i][0]) > 0)
+            {
+                print(`motion failed: input leniency would have passed this, but ${motionSet[i - 1][0]} goes into ${motionSet[i][0]}.`)
+                return false;
+            }
+
+            if (motionSet[i][1] > motionInput[i][1])
+            {
+                print(`motion failed: input was not held for long enough (${motionInput[i][1]}ms out of ${motionSet[i][1]}ms`);
                 return false;
             }
         }
@@ -228,7 +264,7 @@ export function validateMotion(input: (Motion | Input)[], character: Pick<Charac
 
 export function stringifyMotionInput(motionInput: MotionInput)
 {
-    return motionInput.size() > 0 ? motionInput.map(tostring).reduce((acc, v) => `${acc}, ${v}`) : ""
+    return motionInput.size() > 0 ? motionInput.map((e) => `{${e[0]}, ${e[1]}}`).reduce((acc, v) => `${acc}, ${v}`) : ""
 }
 
 
@@ -255,7 +291,7 @@ export function isCurrentMotionDashInput(
         return false;
 
     const primaryInput = inputs[motionSize - 1];
-    return primaryInput !== Motion.Neutral && primaryInput && inputs[motionSize - 3] === primaryInput && inputs[motionSize - 4]
+    return primaryInput[0] !== Motion.Neutral && primaryInput && inputs[motionSize - 3][0] === primaryInput[0] && inputs[motionSize - 4]
 }
 
-export type MotionInput = Array<Motion | Input>;
+export type MotionInput = Array<HeldInputDescriptor>;

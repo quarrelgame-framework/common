@@ -7,7 +7,7 @@ import { EntityState, HitboxRegion, HitData, HitResult } from "util/lib";
 
 import { Hitbox } from "util/hitbox";
 import { Entity, EntityAttributes } from "components/entity.component";
-import { Input, isInput, Motion, MotionInput } from "./input";
+import { HeldInputDescriptor, Input, isInput, Motion, MotionInput } from "./input";
 
 import { Dependency, Modding } from "@flamework/core";
 import { CharacterRigR6 as CharacterRigR6_ } from "@rbxts/promise-character";
@@ -278,9 +278,9 @@ export namespace Character
             return this;
         }
 
-        public SetSkill(input: Input | MotionInput, skill: SkillLike)
+        public SetSkill(input: MotionInput, skill: SkillLike)
         {
-            this.Skills.set(isInput(input) ? [ input ] : input, skill);
+            this.Skills.set(input, skill);
 
             return this;
         }
