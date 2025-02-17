@@ -16,6 +16,8 @@ import type CharacterManager from "singletons/character";
 import type SkillManager from "singletons/skill";
 import type { CharacterSetupFn } from "decorators/character";
 import { SchedulerService } from "singletons/scheduler";
+import { Constructor } from "@flamework/components/out/utility";
+import { isConstructor } from "@flamework/core/out/utility";
 
 enum RotationMode
 {
@@ -848,7 +850,21 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
         return new Promise<HitData<Entity, Entity>>(async (res, rej) => 
         {
-            const unwrapper: (<T>(e: [object, T | ((e: Entity) => T)]) => T) = ((e) => (typeIs(e[1], "function") ? e[1](this) : e[1]));
+            const unwrapper: (<T extends object>(e: [object, T | ((e: Entity) => T | Constructor<T>)]) => T) = ((e) => 
+            {
+                // check for skill constructors and unwrap those
+                if (typeIs(e[1], "function") )
+                {
+                    const functionResult = e[1](this) 
+                    if (isConstructor(functionResult))
+
+                        return new functionResult();
+
+                    return functionResult;
+                }
+                else return e[1];
+            })
+
             const previousSkill = this.SkillManager.GetSkill(this.attributes.PreviousSkill ?? tostring({}));
             const gatlingSkills = this.lastSkillHit?.Gatlings.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []
             const rekkaSkills = previousSkill?.Rekkas.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []

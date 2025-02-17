@@ -7,7 +7,7 @@ import { EntityState, HitboxRegion, HitData, HitResult } from "util/lib";
 
 import { Hitbox } from "util/hitbox";
 import { Entity, EntityAttributes } from "components/entity.component";
-import { HeldInputDescriptor, Input, isInput, Motion, MotionInput } from "./input";
+import { HeldInputDescriptor, Input, isInput, Motion, MotionInput, standardizeMotion } from "./input";
 
 import { Dependency, Modding } from "@flamework/core";
 import { CharacterRigR6 as CharacterRigR6_ } from "@rbxts/promise-character";
@@ -17,10 +17,14 @@ import { Identifier } from "./identifier";
 import QuarrelGameMetadata from "singletons/metadata";
 import { SchedulerService } from "singletons/scheduler";
 import SkillManager from "singletons/skill";
+import { Constructor } from "@flamework/components/out/utility";
+import { getModules } from "@rbxts/testez/src/TestBootstrap";
 
 
-type SkillName = string;
-export type SkillLike = Skill.Skill | ((castingEntity?: Entity, targetEntities?: Set<Entity>) => Skill.Skill)
+// TODO: allow SkillFunction to return constructor<T> instead of just T
+// to make game-side programming easier
+export type SkillFunction<T = Skill.Skill> = ((castingEntity?: Entity, targetEntities?: Set<Entity>) => T)
+export type SkillLike = Skill.Skill | SkillFunction<Skill.Skill>
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Character
@@ -97,7 +101,7 @@ export namespace Character
 
         Setup?: (<T extends Model>(incomingCharacter: T) => unknown);
 
-        Skills: Map<MotionInput, SkillLike>
+        Skills: Map<MotionInput, Skill.Skill | SkillFunction<Skill.Skill> | SkillFunction<Constructor<Skill.Skill>>>
     }
 
     export enum CharacterEvent
@@ -122,9 +126,7 @@ export namespace Character
         export type Healed = (healthOld: number, healthNew: number) => void;
         export type Attack = (attackId: string) => void;
         export type AnimationStart = (animation: Animation.Animation) => void;
-        export type AnimationEnd = (animation: Animation.Animation) => void;
-    }
-
+        export type AnimationEnd = (animation: Animation.Animation) => void; }
     type CharacterEventSignature<T extends CharacterEvent> = T extends typeof CharacterEvent["SKILL_CAST"] ? CharacterEventSignatures.SkillCast
         : T extends typeof CharacterEvent["METER"] ? CharacterEventSignatures.SkillCast
         : T extends typeof CharacterEvent["DAMAGED"] ? CharacterEventSignatures.AnimationEnd
@@ -278,9 +280,9 @@ export namespace Character
             return this;
         }
 
-        public SetSkill(input: MotionInput, skill: SkillLike)
+        public SetSkill(input: MotionInput | number, skill: SkillLike)
         {
-            this.Skills.set(input, skill);
+            this.Skills.set(standardizeMotion(input), skill);
 
             return this;
         }
@@ -602,20 +604,20 @@ export namespace Skill
 
                      if (skill.LinksInto && skillIsStillExecuting())
                      {
-                           let linksInto;
-                           if (typeIs(skill.LinksInto, "function"))
-        
-                               linksInto = skill.LinksInto(entity)
-
+                          let linksInto;
+                          if (typeIs(skill.LinksInto, "function"))
+                          {
+                              linksInto = skill.LinksInto(entity)
+                          }
                           else
 
-                              linksInto = skill.LinksInto;
+                             linksInto = skill.LinksInto;
 
-                          if (animatorAnimation?.IsPlaying())
+                         if (animatorAnimation?.IsPlaying())
 
-                              await animatorAnimation.Stop({FadeTime: 0})
+                             await animatorAnimation.Stop({FadeTime: 0})
 
-                          return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
+                         return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
                      }
 
                      const skillExecutingNow = skillIsStillExecuting();
@@ -970,25 +972,26 @@ export namespace Skill
           */
          public readonly LinksInto?: SkillLike;
 
-         /**
-          * Set the Skills that this Skill can
-          * cancel into on hit.
-          */
-         public AddGatling(motionInput: MotionInput, skill: SkillLike)
-         {
-             this.Gatlings.push([motionInput, skill])
-             return this;
-         }
-
-         /**
-          * Set the Skills that this Skill can
-          * cancel into before recovery.
-          */
-         public AddRekka(motionInput: MotionInput, skill: SkillLike)
-         {
-             this.Rekkas.push([motionInput, skill])
-             return this;
-         }
+         // /**
+         //  * Set the Skills that this Skill can
+         //  * cancel into on hit.
+         //  */
+         // public AddGatling(motionInput: MotionInput, skill: SkillLike)
+         // {
+         //     this.Gatlings.push([motionInput, skill])
+         //
+         //     return this;
+         // }
+         //
+         // /**
+         //  * Set the Skills that this Skill can
+         //  * cancel into before recovery.
+         //  */
+         // public AddRekka(motionInput: MotionInput, skill: SkillLike)
+         // {
+         //     this.Rekkas.push([motionInput, skill])
+         //     return this;
+         // }
     }
 
     export enum SkillGroundedType
@@ -1152,9 +1155,9 @@ export namespace Skill
           * previous skill has made contact with an entity.
           * @param skill The potential follow-up skill.
           */
-         public CanGatlingInto(motion: MotionInput, skill: Skill.Skill)
+         public CanGatlingInto(motion: (HeldInputDescriptor | number)[], skill: Skill.Skill)
          {
-             this.Gatlings.push([motion, skill])
+             this.Gatlings.push([standardizeMotion(motion), skill])
 
              return this;
          }
@@ -1164,9 +1167,9 @@ export namespace Skill
           * previous skill has made contact with an entity.
           * @param skill The potential follow-up skill.
           */
-         public RekkasInto(motion: MotionInput, skill: Skill.Skill)
+         public RekkasInto(motion: (HeldInputDescriptor | number)[], skill: Skill.Skill)
          {
-             this.Rekkas.push([motion, skill])
+             this.Rekkas.push([standardizeMotion(motion), skill])
 
              return this;
          }
