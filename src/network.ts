@@ -38,12 +38,13 @@ export namespace Server
         InterpolateDash(direction: Motion, dashPower?: number): Promise<boolean>;
     }
 
-    type InputFunctions = {
-        /**
-         * Execute an input.
-         */
-        [key in Input]: (this: InputFunctions) => boolean;
-    };
+    // FIXME: Deprecate
+    // type InputFunctions = {
+    //     /**
+    //      * Execute an input.
+    //      */
+    //     [key in Input]: (this: InputFunctions) => boolean;
+    // };
 
     /**
      * Functions related specifically to
@@ -51,7 +52,7 @@ export namespace Server
      *
      * e.g. `SubmitMotionInput`,
      */
-    interface CombatFunctions extends InputFunctions
+    interface CombatFunctions //extends InputFunctions
     {
         /**
          * Submit a motion input to the server.
