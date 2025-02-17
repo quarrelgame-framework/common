@@ -1,11 +1,10 @@
 import { Entity } from "components/entity.component";
-import Character, { SkillLike } from "util/character";
+import Character, { Skill, SkillLike, validateGroundedState } from "util/character";
 
 /**
  * Holds information about an input and how long it was held for. 
 */
-export type HeldInputDescriptor = [ inputBitFlag: number, inputHeldDuration: number ];
-
+export type HeldInputDescriptor = [ inputBitFlag: number, inputHeldDuration: number | -1, inputChanged?: number ];
 /**
  * The medium the User is using
  * to interact with the client.
@@ -21,8 +20,8 @@ export enum InputType
  */
 export enum InputMode
 {
-    Release = 0x800,
-    Press = 0x1000,
+    Release = 0x4000,
+    Press = 0x2000,
     Up = Release,
     Down = Press,
 }
@@ -58,22 +57,22 @@ export type CommandNormal = [Motion, Input];
 export enum Input
 {
     /* TODO: Turn into Normal1 */
-    Punch = 0x10,
+    Punch = 0x20,
     /* TODO: Turn into Normal2 */
-    Kick = 0x20,
+    Kick = 0x40,
     /* TODO: Turn into Normal3 */
-    Slash = 0x40,
+    Slash = 0x80,
     /* TODO: Turn into Normal4 */
-    Heavy = 0x80,
+    Heavy = 0x100,
 
     /* TODO: Turn into ComboExtender */
-    Roman = 0x100,
+    Roman = 0x200,
 
     /* TODO: Turn into Special1 */
     Dust = 0x400,
 
     Dash = 0x800,
-    Burst = 0x200,
+    Burst = 0x1000,
 }
 
 /**
@@ -82,8 +81,8 @@ export enum Input
 export enum Motion
 {
                    Up = 0x02,
-    Back = 0x04, Neutral = 0x01, Forward = 0x06,
-                  Down = 0x08, 
+    Back = 0x04, Neutral = 0x01, Forward = 0x08,
+                  Down = 0x10, 
 
     UpBack = Up | Back, UpForward = Up | Forward,
     DownBack = Down | Back, DownForward = Down | Forward
@@ -102,6 +101,11 @@ const rawDirectionMap: (readonly [Vector3, Motion])[] = ([
 ] as const).map((n) => [ n[0], n[1] ]);
 
 const moveDirectionMap: typeof rawDirectionMap = rawDirectionMap.map((n) => [ n[0].Unit, n[1] ]);
+
+export function IsMotionCardinal(number: Motion)
+{
+    return [Motion.Up, Motion.Down, Motion.Back, Motion.Forward].some((e) => (e & number) > 0)
+}
 
 export function ConvertMoveDirectionToMotion(moveDirection: Vector3): readonly [motion: keyof typeof Motion, dot: number]
 {
@@ -129,35 +133,260 @@ export function ClampDirectionToMotions(direction: Vector3, ...motions: Motion[]
     return motions.map(ConvertMotionToMoveDirection).filter((e) => e.Magnitude > 0 && math.sign(e.Dot(direction)) > 0);
 }
 
+/**
+ * Gets the motion from an input state.
+ */
+export function GetMotionFromInputState(inputState: number): Motion | undefined
+{
+    let endMotion = 0x0000;
+    // if we don't use cardinal directions
+    // then diagonal inputs become included
+    // and that's not good
+    for (const [k, motion] of rawDirectionMap.filter(([,e]) => [Motion.Up, Motion.Down, Motion.Neutral, Motion.Back, Motion.Forward].includes(e))) 
+    {
+        if ((motion & inputState) > 0)
+
+        {
+            endMotion |= motion;
+        }
+    }
+    return endMotion === 0 ? undefined : endMotion;
+}
+
+export function GetInputModeFromInputState(inputState: number): InputMode | undefined
+{
+    if ((inputState & InputMode.Up) > 0)
+
+        return InputMode.Up;
+
+    if ((inputState & InputMode.Down) > 0)
+
+        return InputMode.Down;
+
+    return undefined;
+}
+
+/**
+ * Gets the input and the mode of the input from an input state.
+ * The mode returns -1 if the Mode could not be found.
+ * The function returns undefined if the Input could not be found.
+ */
+export function GetInputFromInputState(inputState: number): readonly [Input, InputMode | -1 ] | undefined
+{
+    let endInput = 0x0000;
+    for (const [, maybeInput] of (Input as unknown as Map<keyof typeof Input, Input>))
+    {
+        if ((inputState & maybeInput) > 0)
+        
+            endInput |= maybeInput;
+
+    }
+
+    let endMode = 0x0000;
+    if ((inputState & InputMode.Release) > 0)
+    
+        endMode = InputMode.Release;
+
+    else if ((inputState & InputMode.Press) > 0)
+
+        endMode = InputMode.Press
+
+    else
+
+        endMode = -1;
+
+    return endInput ? [endInput, endMode] : undefined;
+}
+
 export function ConvertMotionToMoveDirection(motion: Motion): Vector3
 {
-    for (const [ moveDirection, value ] of rawDirectionMap)
-    {
-        if (motion === value)
-            return moveDirection;
-    }
-
-    return Vector3.zero;
+    return rawDirectionMap.find(([, value]) => motion === value)?.[0] ?? Vector3.zero;
 }
 
-function temporarySwap(array: unknown[])
+/**
+* Converts a number representing an input state into a HeldInputDescriptor.
+**/
+export function standardizeMotion(input: number | (number | HeldInputDescriptor)[]): HeldInputDescriptor[]
 {
-    let left = undefined;
-    let right = undefined;
-    const length = array.size();
-    for (left = 0, right = length - 1; left < right; left += 1, right -= 1)
-    {
-        const temporary = array[left];
-        array[left] = array[right];
-        array[right] = temporary;
-    }
-
-    return array;
+    // return an 'instant' (-1) keypress if the input is a number
+    return typeIs(input, "number") ? [[(input & ~InputMode.Release) | InputMode.Press, -1], [Motion.Neutral | InputMode.Release, DateTime.now().UnixTimestampMillis]] : input.map((e) => typeIs(e, "number") ? [((e & ~InputMode.Release) & ~InputMode.Press) === e ? e | InputMode.Press : e, -1] : e);
 }
 
-export function standardizeMotion(input: (number | HeldInputDescriptor)[]): HeldInputDescriptor[]
+enum InputValidationType
 {
-    return input.map((e) => typeIs(e, "number") ? [e, -1] : e);
+    /*
+     * If corner inputs are specified, then corner inputs will
+     * be accounted for in the inputs. For example, both 236 and 26 
+     * would have pass 236 pass, but 26 would not pass for 236.
+     */
+    ADAPTIVE,
+    /*
+     * The input given must be the exact same as the input stated.
+     * 26 must be 26, not 236 or 4126.
+     */
+    STRICT,
+}
+
+export function validateMotion(_input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, skillFetcherArguments: Parameters<Exclude<SkillLike, Skill.Skill>> = [], validationType = InputValidationType.ADAPTIVE)
+{
+    if (typeIs(_input, "number") || _input.some((e) => typeIs(e, "number")))
+
+        return validateMotion(standardizeMotion(_input), character, skillFetcherArguments, validationType)
+    
+    // remove skills that are longer than the input list
+    const validSkills = [];
+    const skillsSimilarToMotion = 
+        [...character.Skills]
+            // .filter((motion) => motion.size() <= _input.size())
+            .map((e) => typeIs(e[1], "function") ? [standardizeMotion(e[0]), e[1](...skillFetcherArguments)] : [standardizeMotion(e[0]), e[1]]) as readonly [MotionInput, Skill.Skill][];
+
+    // if the skill does not have any .Release inputs or any
+    // & 
+
+    // iterate through all the skills' motion inputs in reverse order
+    for (let [currentMotion, currentSkill] of skillsSimilarToMotion)
+    {
+        let input = [ ..._input ] as MotionInput;
+        let inputDidPass = true;
+        const unionChecker = ([v]: HeldInputDescriptor) => !!GetMotionFromInputState(v) && !!GetInputFromInputState(v)
+        const motionHasCorners = currentMotion.some(([v]) => !IsMotionCardinal(v));
+        const motionHasUnions = currentMotion.some(unionChecker)
+        const motionHasReleases = currentMotion.some(([v]) => (v & InputMode.Release) > 0);
+        const motionHasNeutrals = currentMotion.some(([v]) => v === (InputMode.Press | Motion.Neutral))
+
+        
+        const mapData = ([e]: HeldInputDescriptor): { mode: number, motion: number, input: number } => ({
+                mode: GetInputModeFromInputState(e) ?? 0,
+                motion: GetMotionFromInputState(e) ?? 0,
+                input: GetInputFromInputState(e)?.[0] ?? 0,
+        });
+
+        const mapDataString = ({mode, motion, input}: ReturnType<typeof mapData>) => ({
+                    mode: `${GetInputModeFromInputState(mode)} (raw ${mode})`,
+                    motion: `${Motion[GetMotionFromInputState(motion) as Motion]} (raw ${motion})`,
+                    input: `${Input[GetInputFromInputState(input)?.[0] as Input]} (raw ${input})`,
+        });
+
+        // if the motion input we're testing against has no
+        // releases, then remove the releases for the motion 
+        // we're testing for
+
+        if (!motionHasNeutrals)
+
+            input = input.filter((e) => e[0] !== (InputMode.Press | Motion.Neutral))
+
+        // FIXME: if the corresponding motion does not have input-motion unions,
+        // then remove all input-motion unions in the currentMotion
+        // and just make them inputs
+        if (!motionHasUnions)
+        {
+            // take all inputs, find their index, and just separate the input from the motion
+            const inputsToProcess = input.filter((e) => unionChecker(e))
+            
+        }
+            
+        let i = currentMotion.size() - 1;
+        let strippedInput = input.map(mapData).map((e) => e.motion | e.input);
+        let strippedCurrentMotion = currentMotion.map(mapData).map((e) => e.motion | e.input)
+        if (currentSkill.Name.match("Stop and Go")[0])
+        {
+            if (!motionHasReleases)
+            {
+                if (strippedInput.size() < strippedCurrentMotion.size())
+                {
+                    print(`skipped ${currentSkill.Name} because of unacceptable input length mismatch (${strippedCurrentMotion.size()} > ${strippedInput.size()})`)
+                    inputDidPass = false;
+                    continue;
+                }
+
+                i = strippedCurrentMotion.size() - 1;
+                for (i; i > -1; i--)
+                {
+                    // we can just translate all inputs to motions because releases dont matter
+                    const _ii = (strippedInput.size() - strippedCurrentMotion.size()) + i;
+                    const inputIndex = _ii;
+
+                    print(_ii, strippedInput.size(), strippedCurrentMotion.size())
+                    
+                    if ((strippedInput[inputIndex] & strippedCurrentMotion[i]) === strippedCurrentMotion[i])
+                    {
+                        warn("HELL YEAH", currentSkill.Name + ":", i, "passed:", inputIndex, strippedInput, strippedCurrentMotion);
+                        continue;
+                    } 
+                    else 
+                    {
+                        const lastInputMapped = mapData([strippedInput[strippedInput.size() - 2]] as never)
+                        const thisInputMapped = mapData([strippedInput[strippedInput.size() - 1]] as never)
+                        const strippedMotionMapped = mapData([strippedCurrentMotion[i]] as never);
+                        if (i === strippedCurrentMotion.size() - 1 && thisInputMapped.motion === Motion.Neutral)
+                        {
+                            if (strippedMotionMapped.motion === lastInputMapped.motion)
+                            {
+                                if (thisInputMapped.input === strippedMotionMapped.input)
+                                {
+                                    warn (i, "we recovered the fumble", currentSkill.Name);
+                                    // correct the input for future use
+                                    i -= 1;
+                                    continue;
+                                } 
+                                else print("fumble F", i - 1, strippedCurrentMotion[i], thisInputMapped.input, lastInputMapped.input & strippedCurrentMotion[i], currentSkill.Name);
+                            } 
+                        } 
+                    } 
+
+                    inputDidPass = false;
+                    const [ab,bb] = [strippedInput.map((e) => mapDataString(mapData([e] as never))), strippedCurrentMotion.map((e) => mapDataString(mapData([e] as never)))];
+                    warn("HELL NO", currentSkill.Name + ":", ab[inputIndex], `(${inputIndex})`, bb[i], `(${i})`);
+
+                    break;
+                }
+            } 
+        }
+        else 
+        {
+            inputDidPass = false;
+        }
+
+
+
+        // FIXME: make sure to compensate for inputs where people might do
+        // 236 > 5S, which WOULD be valid for 236S but because they released
+        // all their keys, it voids the input.
+        // if (!moti
+
+        // i need to mutate 'i' in this
+        // block because if I need to be able
+        // to skip indices while acting as if it
+        // didn't exist
+        // for (i; i > -1; i--)
+        // {
+        //     const [inputState, inputTime] = currentMotion[i];
+        //     const _ii = (input.size() - currentMotion.size());
+        //     const inputIndex = math.max(0, _ii);
+        //
+        //     switch (validationType)
+        //     {
+        //         case InputValidationType.ADAPTIVE:
+        //         {
+        //             /* falls through */
+        //         }
+        //
+        //         case InputValidationType.STRICT:
+        //         {
+        //         }
+        //     }
+        // }
+
+        if (inputDidPass)
+        {
+            warn("yay", currentSkill.Name, "passed", strippedInput, strippedCurrentMotion, input);
+            validSkills.push([currentMotion, currentSkill] as const);
+        }
+        
+
+    }
+
+    return validSkills;
 }
 
 /**
@@ -169,7 +398,7 @@ export function standardizeMotion(input: (number | HeldInputDescriptor)[]): Held
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion(input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
+export function validateMotion_(input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
 {
     const currentMotion = standardizeMotion(input);
     const decompiledAttacks = [...character.Skills].map(([a,b]) => [standardizeMotion(a), b]) as [MotionInput, SkillLike][];
@@ -204,7 +433,7 @@ export function validateMotion(input: (number | HeldInputDescriptor)[], characte
 
                 set.unshift([Motion.Neutral, -1]); // make sure the motion starts with 5 if it doesn't already
 
-            motionSet = set.filter((e, k, a) => !(a[k - 1][0] === Motion.Neutral && e[0] === Motion.Neutral)); // remove duplicates
+            motionSet = set.filter((e, k, a) => !a[k-1] || !(a[k - 1][0] === Motion.Neutral && e[0] === Motion.Neutral)); // remove duplicates
         }
         else
 
@@ -266,7 +495,6 @@ export function stringifyMotionInput(motionInput: MotionInput)
 {
     return motionInput.size() > 0 ? motionInput.map((e) => `{${e[0]}, ${e[1]}}`).reduce((acc, v) => `${acc}, ${v}`) : ""
 }
-
 
 export const isCommandNormal = (attack: unknown[]): attack is [Motion, Input] => !!(Motion[attack[0] as Motion] && Input[attack[1] as never]) && attack.size() === 2;
 export function isInput(input: unknown): input is Input
