@@ -140,12 +140,12 @@ export namespace Animator
                             )
                             {
                                 // animationWasInterrupted = true;
-                                // print("0.25 fadetime");
+                                print("0.25 fadetime", this.currentLoadedAnimation.AnimationData.name);
                                 this.currentLoadedAnimation?.Stop({ FadeTime: 0.25 });
                             }
                             else
                             {
-                                // print("0 fadetime");
+                                print("0.15 fadetime", this.currentLoadedAnimation.AnimationData.name);
                                 this.currentLoadedAnimation?.Stop({ FadeTime: 0.15 });
                             }
                         }
