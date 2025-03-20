@@ -1,10 +1,14 @@
+import { Constructor, isConstructor } from "@flamework/components/out/utility";
+import { Dependency, Reflect } from "@flamework/core";
 import { Entity } from "components/entity.component";
-import Character, { Skill, SkillLike, validateGroundedState } from "util/character";
+import SkillManager from "singletons/skill";
+import Character, { Skill, SkillFunction, SkillLike, validateGroundedState } from "util/character";
 
 /**
  * Holds information about an input and how long it was held for. 
 */
 export type HeldInputDescriptor = [ inputBitFlag: number, inputHeldDuration: number | -1, inputChanged?: number ];
+
 /**
  * The medium the User is using
  * to interact with the client.
