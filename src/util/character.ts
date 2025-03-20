@@ -19,12 +19,13 @@ import { SchedulerService } from "singletons/scheduler";
 import SkillManager from "singletons/skill";
 import { Constructor } from "@flamework/components/out/utility";
 import { getModules } from "@rbxts/testez/src/TestBootstrap";
+import { isConstructor } from "@flamework/core/out/utility";
 
 
 // TODO: allow SkillFunction to return constructor<T> instead of just T
 // to make game-side programming easier
-export type SkillFunction<T = Skill.Skill> = ((castingEntity?: Entity, targetEntities?: Set<Entity>) => T)
-export type SkillLike = Skill.Skill | SkillFunction<Skill.Skill>
+export type SkillFunction<T extends Constructor<Skill.Skill> | Skill.Skill> = (castParams: {castingEntity: Entity, targetEntities?: Set<Entity>, closeEnemies: Entity[], closeFriendlies: Entity[]}) => T extends { new (): void } ? T : T;
+export type SkillLike = Skill.Skill | Constructor<Skill.Skill> | SkillFunction<Skill.Skill> | SkillFunction<Constructor<Skill.Skill>>
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Character
@@ -101,7 +102,7 @@ export namespace Character
 
         Setup?: (<T extends Model>(incomingCharacter: T) => unknown);
 
-        Skills: Map<MotionInput, Skill.Skill | SkillFunction<Skill.Skill> | SkillFunction<Constructor<Skill.Skill>>>
+        Skills: Map<MotionInput, SkillLike>
     }
 
     export enum CharacterEvent
@@ -607,16 +608,29 @@ export namespace Skill
                           let linksInto;
                           if (typeIs(skill.LinksInto, "function"))
                           {
-                              linksInto = skill.LinksInto(entity)
-                          }
-                          else
+                              linksInto = skill.LinksInto({
+                                  castingEntity: entity,
+                                  targetEntities: new Set(),
+                                  closeFriendlies: [],
+                                  closeEnemies: [],
+                              })
 
-                             linksInto = skill.LinksInto;
+                          } else linksInto = skill.LinksInto;
 
                          if (animatorAnimation?.IsPlaying())
 
                              await animatorAnimation.Stop({FadeTime: 0})
 
+                         if (isConstructor(linksInto))
+                         {
+
+                             const sm = Dependency<SkillManager>();
+                             const skillId = sm.IdFromSkill(skill.LinksInto as Constructor<Skill.Skill>)!
+                             linksInto = sm.GetSkill(skillId)!;
+
+                         }
+
+                         assert(linksInto.FrameData !== skill.FrameData, `${skill.Name} cannot link into itself`);
                          return res(linksInto.FrameData.Execute(entity, linksInto, undefined, skill));
                      }
 
@@ -625,9 +639,9 @@ export namespace Skill
 
                      if (this.RecoveryFrames > 0 && skillExecutingNow)
                      {
-                         if (animatorAnimation?.IsPlaying())
-
-                             animatorAnimation.Stop({FadeTime: 0});
+                         // if (animatorAnimation?.IsPlaying())
+                         //
+                         //     animatorAnimation.Stop({FadeTime: 0});
 
                          entity.SetState(EntityState.Recovery);
                          await waitFrames(math.max(this.RecoveryFrames - (attackDidLand === HitResult.Blocked ? skill.FrameData.BlockAdvantageFrames : 0), 0));
@@ -635,7 +649,7 @@ export namespace Skill
                      } 
                      if (animatorAnimation?.IsPlaying())
                      
-                        animatorAnimation.Stop({FadeTime: 0});
+                        animatorAnimation.Stop({FadeTime: 16/60});
                         // let animationLinked = animatorAnimation;
                         // while (true)
                         // {
@@ -1218,9 +1232,18 @@ export namespace Skill
 
 export function validateGroundedState(skill: SkillLike, character: Entity)
 {
-    const outSkill = typeIs(skill, "function") ? skill(character) : skill;
+    const outSkill = typeIs(skill, "function") ? skill(
+        // TODO: populate with HitData.{targetEntities, targetFriendlies} and get enemies nearby to put into closeEnemies
+       {
+          castingEntity: character,
+          targetEntities: new Set(),
+          closeFriendlies: [],
+          closeEnemies: [],
+      })
+    : skill;
 
-    switch (outSkill.GroundedType)
+
+    switch (isConstructor(outSkill) ? new outSkill() : outSkill.GroundedType)
     {
         case Skill.SkillGroundedType.AirOnly:
             return !character.IsGrounded();

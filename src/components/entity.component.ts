@@ -10,7 +10,7 @@ import type { ICharacter, ICharacterR6 } from "@quarrelgame-framework/types";
 import Visuals from "util/CastVisuals";
 import { Animator } from "./animator.component";
 import { Debug } from "decorators/debug";
-import { Skill, validateGroundedState } from "util/character";
+import { Skill, SkillFunction, SkillLike, validateGroundedState } from "util/character";
 
 import type CharacterManager from "singletons/character";
 import type SkillManager from "singletons/skill";
@@ -160,6 +160,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         this.Humanoid.Health = this.attributes.Health;
         this.Humanoid.MaxHealth = this.attributes.MaxHealth;
 
+        this.Humanoid.SetStateEnabled(Enum.HumanoidStateType.FallingDown, false);
         this.onAttributeChanged("WalkSpeed", () => {
             this.Humanoid.WalkSpeed = this.attributes.WalkSpeed;
             this.ControllerManager.BaseMoveSpeed = this.attributes.WalkSpeed;
@@ -215,16 +216,18 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
                 if ((this.attributes.State & EntityState.Midair) > 0)
                 {
                     this.attributes.State &= ~EntityState.Midair
-                    if (isStateAggressive(this.attributes.State))
-                    {
-                        this.AddState(EntityState.Idle)
-                    }
-                    else
+                    // if (isStateAggressive(this.attributes.State))
+                    // {
+                    //     this.AddState(EntityState.Idle)
+                    // }
+                    // else
                     {
                         this.SetState(EntityState.Idle, EntityState.Landing)
+                        this.Humanoid.ChangeState(Enum.HumanoidStateType.Landed);
                         this.WhileInState(4, EntityState.Landing).then(() => // TODO: update landing frames to be modifiable
                         {
                             this.ClearState(EntityState.Landing)
+                            this.Humanoid.ChangeState(Enum.HumanoidStateType.Running);
                         })
                     }
                 }
@@ -249,29 +252,9 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
             {
                 this.AddState(EntityState.Midair)
                 this.ClearState(EntityState.Walk, EntityState.Idle)
-            }
-
-            if (!this.attributes.ControlDelegated)
-            {
-                if (this.GroundSensor.SensedPart && !this.GroundController.Active && this.Humanoid.GetState() !== Enum.HumanoidStateType.Jumping)
-                {
-                    this.Humanoid.ChangeState(Enum.HumanoidStateType.Running);
-                    this.ControllerManager.ActiveController = this.GroundController;
-                }
-                else if ((!this.GroundSensor.SensedPart && !this.AirController.Active) || this.Humanoid.GetState() === Enum.HumanoidStateType.Jumping)
-                {
-                    if (this.IsState(EntityState.Crouch))
-
-                        this.Crouch(false)
-
-                    this.Humanoid.ChangeState(Enum.HumanoidStateType.Freefall);
-                    this.ControllerManager.ActiveController = this.AirController;
-                }
-
-                this.GroundController.MoveSpeedFactor = math.max(0, TotalMoveSpeedFactor);
+                this.Humanoid.ChangeState(Enum.HumanoidStateType.Freefall);
             }
         }
-
         debug.profileend()
     }
 
@@ -372,7 +355,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 
     public CanBeModified()
     {
-        return (RunService.IsServer() && this.attributes.IsServerEntity) || (RunService.IsClient() && !this.attributes.IsServerEntity)
+        return ((RunService.IsServer() && this.attributes.IsServerEntity) || (RunService.IsClient() && !this.attributes.IsServerEntity)) && !this.attributes.ControlDelegated
     }
 
     private visL = new Visuals(BrickColor.random().Color);
@@ -848,34 +831,64 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         const currentCharacter = this.CharacterManager.GetCharacter(this.attributes.CharacterId);
         assert(currentCharacter, "current character is undefined");
 
+        // warn("skill priority list:", skillPriorityList)
         return new Promise<HitData<Entity, Entity>>(async (res, rej) => 
         {
-            const unwrapper: (<T extends object>(e: [object, T | ((e: Entity) => T | Constructor<T>)]) => T) = ((e) => 
+            const unwrapper: ((e: Skill.Skill | Constructor<Skill.Skill> | SkillFunction<Skill.Skill> | SkillFunction<Constructor<Skill.Skill>>) => Skill.Skill) = ((e) => 
             {
                 // check for skill constructors and unwrap those
-                if (typeIs(e[1], "function") )
+                if (typeIs(e, "function") )
                 {
-                    const functionResult = e[1](this) 
-                    if (isConstructor(functionResult))
+                    const functionResult = e({
+                        castingEntity: this,
+                        targetEntities: new Set(),
+                        closeEnemies: [],
+                        closeFriendlies: []
+                    }) 
 
-                        return new functionResult();
+                    if (isConstructor(functionResult))
+                    {
+                        const idOf = this.SkillManager.IdFromSkill(functionResult)!
+                        const skillOf = this.SkillManager.GetSkill(idOf)!;
+
+                        // warn(`functionResult (idOf, skillOf):`, functionResult, idOf, skillOf)
+                        return skillOf;
+
+                    }
 
                     return functionResult;
                 }
-                else return e[1];
+                else if (isConstructor(e))
+                {
+                    const idOf = this.SkillManager.IdFromSkill(e)!
+                    const skillOf = this.SkillManager.GetSkill(idOf)!;
+
+                    // warn(`e (idOf, skillOf):`, idOf, skillOf)
+                    return skillOf;
+
+                }
+                else return e;
             })
 
             const previousSkill = this.SkillManager.GetSkill(this.attributes.PreviousSkill ?? tostring({}));
-            const gatlingSkills = this.lastSkillHit?.Gatlings.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []
-            const rekkaSkills = previousSkill?.Rekkas.map(unwrapper).filter((e) => skillPriorityList.includes(e.Id)) ?? []
+            const gatlingSkills = this.lastSkillHit?.Gatlings.map(([,e]) =>unwrapper(e)).filter((e) => skillPriorityList.includes(this.SkillManager.IdFromSkill(e) ?? e.Id)) ?? []
+            const rekkaSkills = previousSkill?.Rekkas.map(([,e]) => unwrapper(e)).filter((e) => skillPriorityList.includes(this.SkillManager.IdFromSkill(e) ?? e.Id)) ?? []
 
-            return Promise.resolve([...[...gatlingSkills, ...rekkaSkills].map((e) => e.Id), ...skillPriorityList].mapFiltered((skillId) =>
+            return Promise.resolve([...[...gatlingSkills, ...rekkaSkills].map((e) => this.SkillManager.IdFromSkill(e) ?? e.Id), ...skillPriorityList].mapFiltered((skillId) =>
             {
-                const processedAttacks = [...currentCharacter.Skills].map(unwrapper);
+                const processedAttacks = [...currentCharacter.Skills].map(([,e]) => {
+
+                    const unwrap = unwrapper(e)
+                    // warn(`unwrapping ${e}:`, unwrap)
+                    return unwrap
+                });
+                // warn("e (processedAttacks):", processedAttacks)
                 for (const skill of [...rekkaSkills, ...gatlingSkills, ...processedAttacks,])
                 {
-                    if (skill.Id === skillId)
+                    // warn(skillId, skill, this.SkillManager.GetSkill(skillId), this.SkillManager.IdFromSkill(skill))
+                    if (this.SkillManager.IdFromSkill(skill) === skillId)
                     {
+                        // warn(`skill ${skill.Name} has ${skillId} which equals to ${this.SkillManager.GetSkill(skillId)?.Name}`)
                         const isGatlingSkill = gatlingSkills.includes(skill);
                         const isRekkaSkill = rekkaSkills.includes(skill);
 
@@ -904,12 +917,16 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
                 }
 
                 return undefined;
-            })).then((skills) => skills[0]).then((skill) => {
+            })).then((skills) => {
+                const skill = skills[0];
+                // warn("chosen skill:", skill);
+
                 if (skill)
                 
                     this.instance.PivotTo(CFrame.lookAlong(this.instance.GetPivot().Position, this.ControllerManager.FacingDirection))
 
-                skill?.FrameData.Execute(this, skill).then(res).catch(rej)
+                // warn("executing")
+                skill?.FrameData.Execute(this, skill).then(res).catch(rej);
             })
         });
     }

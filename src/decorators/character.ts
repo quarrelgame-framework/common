@@ -2,7 +2,7 @@ import { Modding, Reflect } from "@flamework/core";
 import { CharacterManager } from "singletons/character";
 
 import { standardizeMotion, type Input, type MotionInput } from "util/input";
-import Character, { Skill, type SkillLike } from "util/character";
+import Character, { Skill, SkillFunction, type SkillLike } from "util/character";
 import { isConstructor, type Constructor } from "@flamework/core/out/utility";
 import SkillManager from "singletons/skill";
 import { ICharacter } from "@quarrelgame-framework/types";
@@ -14,14 +14,15 @@ const undefinedSetupFunction = (() => undefined);
  * Request the required metadata for lifecycle events and dependency resolution.
  * @metadata flamework:implements flamework:parameters identifier
  */
-export const QGCharacter = Modding.createDecorator<[{id?: string, skills: [input: (MotionInput | number)[], attack: Constructor<Skill.Skill> | SkillLike][], setup?: CharacterSetupFn}]>("Class", (descriptor, [{id, skills, setup}]) => 
+export const QGCharacter = Modding.createDecorator<[{id?: string, skills: [input: (MotionInput | number)[], attack: Constructor<Skill.Skill> | SkillFunction<Constructor<Skill.Skill>> | SkillLike][], setup?: CharacterSetupFn}]>("Class", (descriptor, [{id, skills, setup}]) => 
 {
     const skillManager = Modding.resolveSingleton<SkillManager>(SkillManager);
     const mapFromMapLike = new ReadonlyMap([...skills].map(([input, attack]) => 
     {
         const outInput = typeIs(input, "number") ? standardizeMotion([input]) : input;
 
-        if (typeIs(attack, "table") && typeIs(rawget(attack, "new"), "function"))
+        // print(attack, typeIs(attack, "table") && isConstructor(attack), "FUCK YOU")
+        if (typeIs(attack, "table") && isConstructor(attack))
         {
             const SkillIdentifier = (attack as unknown as Pick<Skill.Skill, "Id">).Id as string ?? Reflect.getMetadata(attack, "qgf.id") as string;
             const foundSkill = SkillIdentifier && skillManager.GetSkill(SkillIdentifier);

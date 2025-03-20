@@ -1,4 +1,6 @@
-import { Controller, Service, OnStart, OnInit, Modding } from "@flamework/core";
+import { isConstructor } from "@flamework/components/out/utility";
+import { Controller, Service, OnStart, OnInit, Modding, Reflect } from "@flamework/core";
+import { Constructor } from "@flamework/core/out/utility";
 import type { Skill } from "util/character";
 
 export interface OnSkillRegistered {
@@ -24,9 +26,9 @@ export class SkillManager implements OnStart, OnInit
         return this._skills.get(skillId);
     }
 
-    public IdFromSkill(skill: Skill.Skill): string | undefined
+    public IdFromSkill(skill: Skill.Skill | Constructor<Skill.Skill>): string | undefined
     {
-        return [...this._skills].find(([, _skill]) => _skill === skill)?.[0];
+        return [...this._skills].find(([, _skill]) => _skill === skill || _skill.Id === (Reflect.getMetadata<string>(skill, "qgf.id")))?.[0];
     }
 
     public SkillExists(skillId: string): boolean
@@ -48,7 +50,7 @@ export class SkillManager implements OnStart, OnInit
         assert(!this._skills.has(skillId), `skill id ${skillId} already exists`);
         print(`Skill ${skill.Name} (${skillId}) added as ${skillId}.`)
 
-        this._skills.set(skillId, skill); 
+        this._skills.set(skillId, skill)
         for (const listener of this.listeners)
 
             listener.onSkillRegistered(skillId, skill);
