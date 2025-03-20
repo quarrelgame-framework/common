@@ -432,98 +432,97 @@ export function validateMotion(_input: (number | HeldInputDescriptor)[], charact
  * looking for specific directions within the non-cardinal
  * directions (S/NW, S/NE), DownLeft should qualify for Down and Left.
  */
-export function validateMotion_(input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
-{
-    const currentMotion = standardizeMotion(input);
-    const decompiledAttacks = [...character.Skills].map(([a,b]) => [standardizeMotion(a), b]) as [MotionInput, SkillLike][];
-    if ((currentMotion[0][0] & Motion.Neutral) === 0)
-    
-        currentMotion.unshift([Motion.Neutral, -1]);
-    
-    print("character skills:", character.Skills);
-    const matchingAttacks = decompiledAttacks.map(([a,b]) => {
-        if (typeIs(b, "function"))
-        {
-            if (skillFetcherArguments)
-            {
-                const [ thisEntity, entityList ] = skillFetcherArguments;
-                return [a,b(thisEntity, new Set(entityList))] as const;
-            }
-
-            return [a, b()] as const;
-        }
-
-        return [a,b] as const;
-    }).filter(([motionInput, skillLike]) => 
-    {
-        let motionSet: HeldInputDescriptor[];
-        // if the attack inputs provided by the character
-        // specify a neutral, then prefix the move with
-        // neutral.
-        if (motionInput.find((e) => e[0] === Motion.Neutral))
-        {
-            const set = [ ... currentMotion ];
-            if (set[0][0] !== Motion.Neutral)
-
-                set.unshift([Motion.Neutral, -1]); // make sure the motion starts with 5 if it doesn't already
-
-            motionSet = set.filter((e, k, a) => !a[k-1] || !(a[k - 1][0] === Motion.Neutral && e[0] === Motion.Neutral)); // remove duplicates
-        }
-        else
-
-            // TODO: only remove neutrals that aren't specified in the motion set
-            motionSet = currentMotion.filter((e) => e[0] !== Motion.Neutral); // filter all neutrals 
-
-        if (motionSet.size() < motionInput.size())
-        {
-            print(`Motion set for skill ${skillLike.Name} is shorter (${motionSet.size()}) than the queued motion input (${motionInput.size()}). Skipping.`);
-            return false;
-        }
-
-             
-        if (motionSet.size() === 0)
-        {
-            print(`Motion set for skill ${skillLike.Name} is zero.`);
-            return;
-        }
-
-        // run the motion input in reverse
-        // because extra motions / inputs
-        // might have been queued
-        for (let i = motionInput.size() - 1; i >= 0; i--)
-        {
-            // TODO: have some form of input leniency here by checking some kind of environment variabled
-            // if leniency is on, check if the user's input contains the motion set input 
-            // (so the user's DownLeft would pass for Down UNLESS the next input is down)
-            //  
-            // otherwise, just do direct comparison
-            //
-            const previousIndex = motionSet.size() - (motionInput.size() - i);
-            if ((motionInput[i][0] & motionSet[previousIndex][0]) === 0) // lenient case
-            {
-                print(`motion failed: ${motionInput[i][0]} !& ${motionSet[previousIndex][0]}`);
-                return false;
-            } else if (motionSet[i - 1] && (motionSet[i - 1][0] & motionSet[i][0]) > 0)
-            {
-                print(`motion failed: input leniency would have passed this, but ${motionSet[i - 1][0]} goes into ${motionSet[i][0]}.`)
-                return false;
-            }
-
-            if (motionSet[i][1] > motionInput[i][1])
-            {
-                print(`motion failed: input was not held for long enough (${motionInput[i][1]}ms out of ${motionSet[i][1]}ms`);
-                return false;
-            }
-        }
-
-        print(`motion passed: ${stringifyMotionInput(motionInput)} === ${stringifyMotionInput(motionSet)}`);
-        return true;
-    });
-
-    const output = matchingAttacks.filter((e) => e[1].GaugeRequired <= maxHeat);
-    print("output:", output);
-    return output;
-}
+// export function validateMotion_(input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, maxHeat: number = 0, skillFetcherArguments?: [Entity, Entity[]]): (readonly [MotionInput, SkillLike])[]
+// {
+//     const currentMotion = standardizeMotion(input);
+//     const decompiledAttacks = [...character.Skills].map(([a,b]) => [standardizeMotion(a), b]) as [MotionInput, SkillLike][];
+//     if ((currentMotion[0][0] & Motion.Neutral) === 0)
+//     
+//         currentMotion.unshift([Motion.Neutral, -1]);
+//     
+//     print("character skills:", character.Skills);
+//     const matchingAttacks = decompiledAttacks.map(([a,b]) => {
+//         if (typeIs(b, "function"))
+//         {
+//             if (skillFetcherArguments)
+//             {
+//                 return [a,b(skillFetcherArguments)] as const;
+//             }
+//
+//             return [a, b()] as const;
+//         }
+//
+//         return [a,b] as const;
+//     }).filter(([motionInput, skillLike]) => 
+//     {
+//         let motionSet: HeldInputDescriptor[];
+//         // if the attack inputs provided by the character
+//         // specify a neutral, then prefix the move with
+//         // neutral.
+//         if (motionInput.find((e) => e[0] === Motion.Neutral))
+//         {
+//             const set = [ ... currentMotion ];
+//             if (set[0][0] !== Motion.Neutral)
+//
+//                 set.unshift([Motion.Neutral, -1]); // make sure the motion starts with 5 if it doesn't already
+//
+//             motionSet = set.filter((e, k, a) => !a[k-1] || !(a[k - 1][0] === Motion.Neutral && e[0] === Motion.Neutral)); // remove duplicates
+//         }
+//         else
+//
+//             // TODO: only remove neutrals that aren't specified in the motion set
+//             motionSet = currentMotion.filter((e) => e[0] !== Motion.Neutral); // filter all neutrals 
+//
+//         if (motionSet.size() < motionInput.size())
+//         {
+//             print(`Motion set for skill ${skillLike.Name} is shorter (${motionSet.size()}) than the queued motion input (${motionInput.size()}). Skipping.`);
+//             return false;
+//         }
+//
+//              
+//         if (motionSet.size() === 0)
+//         {
+//             print(`Motion set for skill ${skillLike.Name} is zero.`);
+//             return;
+//         }
+//
+//         // run the motion input in reverse
+//         // because extra motions / inputs
+//         // might have been queued
+//         for (let i = motionInput.size() - 1; i >= 0; i--)
+//         {
+//             // TODO: have some form of input leniency here by checking some kind of environment variabled
+//             // if leniency is on, check if the user's input contains the motion set input 
+//             // (so the user's DownLeft would pass for Down UNLESS the next input is down)
+//             //  
+//             // otherwise, just do direct comparison
+//             //
+//             const previousIndex = motionSet.size() - (motionInput.size() - i);
+//             if ((motionInput[i][0] & motionSet[previousIndex][0]) === 0) // lenient case
+//             {
+//                 print(`motion failed: ${motionInput[i][0]} !& ${motionSet[previousIndex][0]}`);
+//                 return false;
+//             } else if (motionSet[i - 1] && (motionSet[i - 1][0] & motionSet[i][0]) > 0)
+//             {
+//                 print(`motion failed: input leniency would have passed this, but ${motionSet[i - 1][0]} goes into ${motionSet[i][0]}.`)
+//                 return false;
+//             }
+//
+//             if (motionSet[i][1] > motionInput[i][1])
+//             {
+//                 print(`motion failed: input was not held for long enough (${motionInput[i][1]}ms out of ${motionSet[i][1]}ms`);
+//                 return false;
+//             }
+//         }
+//
+//         print(`motion passed: ${stringifyMotionInput(motionInput)} === ${stringifyMotionInput(motionSet)}`);
+//         return true;
+//     });
+//
+//     const output = matchingAttacks.filter((e) => e[1].GaugeRequired <= maxHeat);
+//     print("output:", output);
+//     return output;
+// }
 
 export function stringifyMotionInput(motionInput: MotionInput)
 {
