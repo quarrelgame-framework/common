@@ -11,7 +11,6 @@ export const QGSkill = Modding.createDecorator<[{id?: string}]>("Class", (descri
 
     const arbitrarySkill = new (descriptor.constructor as new () => Skill.Skill)();
     assert(("FrameData" in arbitrarySkill), `${typeOf(arbitrarySkill)} is not a Skill object.`);
-    
     rawset(arbitrarySkill, "Id", objectIdentifier);
 
     Reflect.defineMetadata(descriptor.object, "qgf.id", objectIdentifier);
