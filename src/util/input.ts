@@ -80,6 +80,7 @@ export enum Input
  */
 export enum Motion
 {
+    // TODO: maybe look into SOCD by having Up be ~Down instead of its own unique value? :thinking:
                    Up = 0x02,
     Back = 0x04, Neutral = 0x01, Forward = 0x08,
                   Down = 0x10, 
@@ -227,8 +228,7 @@ enum InputValidationType
     STRICT,
 }
 
-export function validateMotion(_input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, skillFetcherArguments: Parameters<Exclude<SkillLike, Skill.Skill>> = [], validationType = InputValidationType.ADAPTIVE)
-{
+export function validateMotion(_input: (number | HeldInputDescriptor)[], character: Pick<Character.Character, "Skills">, skillFetcherArguments: Parameters<SkillFunction<Skill.Skill>>["0"], validationType = InputValidationType.ADAPTIVE): (readonly [motionInput: MotionInput, skill: Skill.Skill])[] {
     if (typeIs(_input, "number") || _input.some((e) => typeIs(e, "number")))
 
         return validateMotion(standardizeMotion(_input), character, skillFetcherArguments, validationType)
@@ -237,8 +237,27 @@ export function validateMotion(_input: (number | HeldInputDescriptor)[], charact
     const validSkills = [];
     const skillsSimilarToMotion = 
         [...character.Skills]
-            // .filter((motion) => motion.size() <= _input.size())
-            .map((e) => typeIs(e[1], "function") ? [standardizeMotion(e[0]), e[1](...skillFetcherArguments)] : [standardizeMotion(e[0]), e[1]]) as readonly [MotionInput, Skill.Skill][];
+            // .filter((motion) => _input.size() >= motion.size())
+            .map<[MotionInput, Skill.Skill | Constructor<Skill.Skill>]>((e) => typeIs(e[1], "function") ? [standardizeMotion(e[0]), e[1](skillFetcherArguments)] : [standardizeMotion(e[0]), e[1]])
+            
+            .map<[MotionInput, Skill.Skill] | undefined>(([motion, skill]) => 
+            {
+                // @TODO: integrate this into util/Character.ts
+                const skillId = Reflect.getMetadata<string>(skill, "qgf.id") ?? (!isConstructor(skill) ? skill.Id : undefined) ?? Reflect.getMetadata<string>(skill, "identifier");
+                // this fixes the problem of providing constructors to @QGFCharacter({skills})
+                if (skillId)
+                {
+                    const foundSkill = Dependency<SkillManager>().GetSkill(skillId)
+                    if (foundSkill)
+
+                        return [motion, foundSkill]
+                }
+
+                return [motion, skill as never];
+            }) as [MotionInput, Skill.Skill][]
+
+    // warn("Skills similar to motion:", skillsSimilarToMotion);
+
 
     // if the skill does not have any .Release inputs or any
     // & 
@@ -252,7 +271,7 @@ export function validateMotion(_input: (number | HeldInputDescriptor)[], charact
         const motionHasCorners = currentMotion.some(([v]) => !IsMotionCardinal(v));
         const motionHasUnions = currentMotion.some(unionChecker)
         const motionHasReleases = currentMotion.some(([v]) => (v & InputMode.Release) > 0);
-        const motionHasNeutrals = currentMotion.some(([v]) => v === (InputMode.Press | Motion.Neutral))
+        const motionHasNeutrals = currentMotion.some(([v]) => v === (InputMode.Press | Motion.Neutral) || v === Motion.Neutral)
 
         
         const mapData = ([e]: HeldInputDescriptor): { mode: number, motion: number, input: number } => ({
@@ -267,14 +286,8 @@ export function validateMotion(_input: (number | HeldInputDescriptor)[], charact
                     input: `${Input[GetInputFromInputState(input)?.[0] as Input]} (raw ${input})`,
         });
 
-        // if the motion input we're testing against has no
-        // releases, then remove the releases for the motion 
-        // we're testing for
-
-        if (!motionHasNeutrals)
-
-            input = input.filter((e) => e[0] !== (InputMode.Press | Motion.Neutral))
-
+        // TODO:
+        // compile the motion input from the start. thats literally it really lol
         // FIXME: if the corresponding motion does not have input-motion unions,
         // then remove all input-motion unions in the currentMotion
         // and just make them inputs
@@ -282,110 +295,131 @@ export function validateMotion(_input: (number | HeldInputDescriptor)[], charact
         {
             // take all inputs, find their index, and just separate the input from the motion
             const inputsToProcess = input.filter((e) => unionChecker(e))
-            
         }
-            
-        let i = currentMotion.size() - 1;
-        let strippedInput = input.map(mapData).map((e) => e.motion | e.input);
-        let strippedCurrentMotion = currentMotion.map(mapData).map((e) => e.motion | e.input)
-        if (currentSkill.Name.match("Stop and Go")[0])
+
+
+
+        // TODO: integrate this into currentMotion and input
+        let strippedInput = input.map(mapData).map((e) => e.motion | e.input | e.mode);
+        let strippedCurrentMotion = currentMotion.map(mapData).map((e) => e.motion | e.input | (!motionHasReleases ? 0 : e.mode)) 
+
+        if (!motionHasReleases)
         {
-            if (!motionHasReleases)
+            let recognizedMotionInputQueue: number[] = [];
+            for (let i = 0; i < input.size(); i++)
             {
-                if (strippedInput.size() < strippedCurrentMotion.size())
+                const [thisInput, timeInputted] = input[i];
+                if ((thisInput & InputMode.Press) > 0)
+                
+                    recognizedMotionInputQueue.push(thisInput & ~InputMode.Press);
+
+                else
+
+                    recognizedMotionInputQueue.push(recognizedMotionInputQueue[recognizedMotionInputQueue.size() - 1] & ~(thisInput | InputMode.Release));
+            }
+
+            let encounteredNonNeutralInput = false;
+            recognizedMotionInputQueue = 
+                recognizedMotionInputQueue.filter((input, i) =>
                 {
-                    print(`skipped ${currentSkill.Name} because of unacceptable input length mismatch (${strippedCurrentMotion.size()} > ${strippedInput.size()})`)
-                    inputDidPass = false;
+                    if (input === 0)
+
+                        return false;
+                    
+                    // the first state will most likely be neutral
+                    if (input === 1 && !motionHasNeutrals /* && encounteredNonNeutralInput */)
+
+                        return false;
+
+                    else if (input !== 1)
+
+                        encounteredNonNeutralInput = true;
+
+                    return true;
+                })
+
+
+            if (recognizedMotionInputQueue.size() < currentMotion.size())
+
+                continue;
+
+            const motionIsCommand = strippedCurrentMotion.size() <= 2; // (Motion[currentMotion[0][0]] && Input[currentMotion[1][0]]);
+            const lastTestMotion = strippedCurrentMotion[strippedCurrentMotion.size() - 1];
+
+            let firstIndex = -1;
+            let motionCursor = strippedCurrentMotion.size(); // do not pre-decrement this since when firstIndex is set, the loop will offset by 1
+            let i = recognizedMotionInputQueue.size() - 1
+            for (i; i >= 0; i-- && (firstIndex !== -1 ? motionCursor-- : i))
+            {
+                // print("trying index", i, "for", currentSkill.Name);
+                // keep looking until we find an input that matches the tail of the current skill
+                const thisInput = recognizedMotionInputQueue[i];
+                const thisMotion = GetMotionFromInputState(thisInput);
+                const thisButton = GetInputFromInputState(thisInput);
+
+                const lastInput = recognizedMotionInputQueue[i - 1] ?? 0;
+                const lastMotion = GetMotionFromInputState(lastInput);
+                const lastButton = GetInputFromInputState(lastInput);
+
+                if (motionIsCommand)
+                {
+                    firstIndex = i;
+                    motionCursor--;
+                    // warn(`set first index to ${i} for ${currentSkill.Name} (${motionCursor}, ${strippedCurrentMotion.size()})`);
+                }/*  else warn(`${currentSkill.Name} is not a command input`) */
+
+                if (firstIndex === -1)
+                {
+                    if (/* motionIsCommand ? thisInput === lastTestMotion : */ (thisInput & lastTestMotion) === thisInput) 
+                    {
+                        // if the index before this one has inputs that also satisfy this condition,
+                        // then continue
+                        const qual = ((recognizedMotionInputQueue[i - 1] ?? 0) & lastTestMotion);
+                        if (qual === thisInput && !motionIsCommand && thisMotion === lastInput)
+                        {
+                            // print(`qual passed for ${currentSkill.Name}:`, qual, recognizedMotionInputQueue[i - 1], recognizedMotionInputQueue[i], lastTestMotion)
+                            firstIndex = i - 1;
+                            i++;
+                        } else {
+                            // print(`qual failed for ${currentSkill.Name}:`, qual, recognizedMotionInputQueue[i - 1], recognizedMotionInputQueue[i], lastTestMotion)
+                            firstIndex = i;
+                            i++;
+                        }
+                    }
                     continue;
                 }
-
-                i = strippedCurrentMotion.size() - 1;
-                for (i; i > -1; i--)
+                else
                 {
-                    // we can just translate all inputs to motions because releases dont matter
-                    const _ii = (strippedInput.size() - strippedCurrentMotion.size()) + i;
-                    const inputIndex = _ii;
+                    const relativeCurrentMotion = strippedCurrentMotion[motionCursor];
+                    if (!relativeCurrentMotion) // means that there is no input left but the sequence is longer
 
-                    print(_ii, strippedInput.size(), strippedCurrentMotion.size())
-                    
-                    if ((strippedInput[inputIndex] & strippedCurrentMotion[i]) === strippedCurrentMotion[i])
-                    {
-                        warn("HELL YEAH", currentSkill.Name + ":", i, "passed:", inputIndex, strippedInput, strippedCurrentMotion);
-                        continue;
+                        break;
+                    // warn("muehehehe:", thisInput & relativeCurrentMotion, thisInput, relativeCurrentMotion)
+                    if (motionIsCommand ? thisInput !== relativeCurrentMotion : (thisInput & relativeCurrentMotion) !== relativeCurrentMotion) {
+                        inputDidPass = false;
+                        // print(`index ${i + 1} (${thisInput}) failed for ${currentSkill.Name} (${motionCursor + 1} | ${relativeCurrentMotion}) (${motionHasNeutrals}), first index ${firstIndex + 1}, result (${thisInput & relativeCurrentMotion}):`, recognizedMotionInputQueue, strippedCurrentMotion, `(${thisInput} & ${relativeCurrentMotion} actually is ${thisInput & relativeCurrentMotion})`)
+                        break;
                     } 
-                    else 
-                    {
-                        const lastInputMapped = mapData([strippedInput[strippedInput.size() - 2]] as never)
-                        const thisInputMapped = mapData([strippedInput[strippedInput.size() - 1]] as never)
-                        const strippedMotionMapped = mapData([strippedCurrentMotion[i]] as never);
-                        if (i === strippedCurrentMotion.size() - 1 && thisInputMapped.motion === Motion.Neutral)
-                        {
-                            if (strippedMotionMapped.motion === lastInputMapped.motion)
-                            {
-                                if (thisInputMapped.input === strippedMotionMapped.input)
-                                {
-                                    warn (i, "we recovered the fumble", currentSkill.Name);
-                                    // correct the input for future use
-                                    i -= 1;
-                                    continue;
-                                } 
-                                else print("fumble F", i - 1, strippedCurrentMotion[i], thisInputMapped.input, lastInputMapped.input & strippedCurrentMotion[i], currentSkill.Name);
-                            } 
-                        } 
-                    } 
-
-                    inputDidPass = false;
-                    const [ab,bb] = [strippedInput.map((e) => mapDataString(mapData([e] as never))), strippedCurrentMotion.map((e) => mapDataString(mapData([e] as never)))];
-                    warn("HELL NO", currentSkill.Name + ":", ab[inputIndex], `(${inputIndex})`, bb[i], `(${i})`);
-
-                    break;
                 }
-            } 
+            }
+
+            if (firstIndex === -1)
+            {
+                // print(currentSkill.Name, "fell through:", recognizedMotionInputQueue, strippedCurrentMotion, `(motionIsCommand: ${motionIsCommand}, cursor ${motionCursor + 1} / ${strippedCurrentMotion.size()}`);
+                inputDidPass = false;
+            }
+
+            // print(motionIsCommand ? "(motion is command)" : "" + "rmiq for", currentSkill.Name, recognizedMotionInputQueue, "first index:", firstIndex, "target:", );
         }
-        else 
-        {
-            inputDidPass = false;
-        }
-
-
-
-        // FIXME: make sure to compensate for inputs where people might do
-        // 236 > 5S, which WOULD be valid for 236S but because they released
-        // all their keys, it voids the input.
-        // if (!moti
-
-        // i need to mutate 'i' in this
-        // block because if I need to be able
-        // to skip indices while acting as if it
-        // didn't exist
-        // for (i; i > -1; i--)
-        // {
-        //     const [inputState, inputTime] = currentMotion[i];
-        //     const _ii = (input.size() - currentMotion.size());
-        //     const inputIndex = math.max(0, _ii);
-        //
-        //     switch (validationType)
-        //     {
-        //         case InputValidationType.ADAPTIVE:
-        //         {
-        //             /* falls through */
-        //         }
-        //
-        //         case InputValidationType.STRICT:
-        //         {
-        //         }
-        //     }
-        // }
 
         if (inputDidPass)
         {
-            warn("yay", currentSkill.Name, "passed", strippedInput, strippedCurrentMotion, input);
+            // print("yay", currentSkill.Name, "passed")
             validSkills.push([currentMotion, currentSkill] as const);
         }
-        
-
     }
 
+    // warn(validSkills)
     return validSkills;
 }
 
