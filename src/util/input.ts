@@ -26,6 +26,25 @@ export enum InputMode
     Down = Press,
 }
 
+/**
+ * Whether an input needs to be the
+ * exact same or similar to its validator.
+ *
+ * Similar - DownForward matches Forward as long as Down was pressed
+ * beforehand (or two steps if a Neutral is behind the Down)
+ *
+ * Exact - DownForward must be DownForward and no else.
+ */
+export enum InputLeniency
+{
+    EXACT = 0x10000,
+    STRICT = EXACT,
+
+    SIMILAR = 0x20000,
+    LENIENT = SIMILAR,
+}
+
+
 /** Whether the input was allowed
  * or denied.
  */
