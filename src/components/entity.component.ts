@@ -34,10 +34,24 @@ const Fetcher = <T extends keyof CreatableInstances>(thisInstance: Instance, ins
      return thisInstance.WaitForChild(instanceName) as Instances[T];
 }
 
-export interface EntityBaseAttributes extends StateAttributes {
+export interface EntityBaseAttributes extends Record<string, unknown>, StateAttributes {
+    /**
+     * The ID of the entity.
+     */
+    EntityId: string;
+
+    /**
+     * The maximum health of the entity.
+     */
     MaxHealth: number,
+    /**
+     * The current health of the entity.
+     */
     Health: number,
 
+    /**
+     * The maximum walking speed of the entity.
+     */
     WalkSpeed: number
 
     /*
@@ -48,7 +62,17 @@ export interface EntityBaseAttributes extends StateAttributes {
      * ownership of the instance. Be careful.
      */
     IsServerEntity: boolean,
+
+    /**
+     * The current state the entity is in.
+     */
     State: number,
+
+    /**
+     * The root of where all absolute directional
+     * moves will root its "point A" positions from.
+     */
+    Origin: CFrame,
 
     /*
      * Determines whether the entity
@@ -61,7 +85,8 @@ export interface EntityBaseAttributes extends StateAttributes {
     ControlDelegated: boolean,
 }
 
-export const EntityBaseDefaults = {
+export const EntityBaseDefaults: EntityBaseAttributes = {
+    EntityId: undefined as unknown as string,
     MaxHealth: 100,
     Health: 100,
 
@@ -70,10 +95,12 @@ export const EntityBaseDefaults = {
     IsServerEntity: false,
     ControlDelegated: false,
     State: EntityState.Idle,
-}
+
+    Origin: CFrame.lookAlong(Vector3.zero, Vector3.xAxis, Vector3.yAxis)
+} 
 
 @Component({
-    defaults: EntityBaseDefaults
+    defaults: EntityBaseDefaults,
 })
 export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics 
 {
