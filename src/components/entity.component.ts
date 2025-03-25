@@ -18,6 +18,7 @@ import type { CharacterSetupFn } from "decorators/character";
 import { SchedulerService } from "singletons/scheduler";
 import { Constructor } from "@flamework/components/out/utility";
 import { isConstructor } from "@flamework/core/out/utility";
+import Make from "@rbxts/make";
 
 enum RotationMode
 {
@@ -115,11 +116,19 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
     public readonly IKController: IKControl = Fetcher(this.instance.HumanoidRootPart, "IKController", "IKControl");
     public readonly Humanoid = this.instance.Humanoid;
 
+    protected readonly PlaneConstraint: PlaneConstraint = Fetcher(this.instance.HumanoidRootPart, "PlaneConstraint", "PlaneConstraint");
+
+    protected readonly PlaneConstraintTarget: Attachment = Make("Attachment", {
+        WorldCFrame: this.attributes.Origin,
+        Parent: Workspace.WaitForChild("Global Attachment Origin")
+    });
+
     public readonly GroundOffsetMultiplier = 1;
     public readonly Animator: Animator.StateAnimator;
 
     constructor(protected readonly schedulerService: SchedulerService)
     {
+        debug.profilebegin("Entity Construction")
         super(schedulerService);
         const components = Dependency<Components>();
         const currentAnimator = components.getComponent<Animator.StateAnimator>(this.instance);
@@ -132,8 +141,19 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
             this.Animator = components.addComponent<Animator.StateAnimator>(this.instance);
 
         if (!this.CanBeModified())
-            
+
             this.Animator.Pause();
+
+        this.onAttributeChanged("Origin", (newOrigin,) => 
+        {
+            this.PlaneConstraint.Attachment0 = this.PlaneConstraintTarget;
+            this.PlaneConstraint.Attachment1 = this.instance.PrimaryPart.RootAttachment;
+            this.PlaneConstraintTarget.WorldPosition = newOrigin.Position;
+            this.PlaneConstraintTarget.Axis = newOrigin.LookVector.Cross(newOrigin.UpVector);
+            this.PlaneConstraintTarget.Name = `PlaneConstraintTarget${this.attributes.EntityId}`;
+        });
+
+        debug.profileend()
     }
 
     onStart()
@@ -449,10 +469,6 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 export interface EntityAttributes extends EntityBaseAttributes
 {
     /**
-     * The ID of the entity.
-     */
-    EntityId: string;
-    /**
      * The maximum health of the entity.
      */
     MaxHealth: number;
@@ -586,7 +602,13 @@ export interface EntityAttributes extends EntityBaseAttributes
     /**
      * The match possessing this combatant.
      * Errors if the match is invalid.
-     */
+     *
+     * FIXME: remove matchid and make
+     * match checking conditional so developers
+     * can use the framework in an open setting
+     *
+    * */
+
     MatchId: string;
 
     /**
@@ -812,6 +834,29 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
             this.SetState(EntityState.Hitstun);
 
         this.attributes.HitStun = hitStun;
+    }
+
+    /**
+     * Set the origin of the entity.
+     *
+     * Directional checks, when absolute,
+     * root from the Entity's origin.
+     */
+    public SetOrigin(origin?: CFrame)
+    {
+        this.attributes.Origin = origin ?? EntityBaseDefaults.Origin;
+    }
+
+    /**
+     * Set the normal of which this entity can only move.
+     */
+    public SetMovementAxis(axis: Vector3)
+    {
+        if (!this.CanBeModified())
+
+            return;
+
+        this.SetOrigin(CFrame.lookAlong(this.attributes.Origin.Position, axis));
     }
 
     public override Jump() {
@@ -1085,5 +1130,4 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
         super.Crouch(crouchState)
     }
-
 }
