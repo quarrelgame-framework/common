@@ -2,6 +2,7 @@
 import { BaseComponent, Component, Components } from "@flamework/components";
 import { Dependency, OnStart } from "@flamework/core";
 import Make from "@rbxts/make";
+import MapNamespace from "components/map.component";
 import { Entity } from "components/entity.component";
 import { Identifier } from "util/identifier";
 import { Model } from "util/model";
@@ -134,7 +135,7 @@ namespace _Map
 
     export type Arena<
         T extends ArenaLike | (Model & { PrimaryPart: BasePart; }) = ArenaLike,
-    > = T extends ArenaLike ? Model & {
+    > = T extends ArenaLike ? Folder & {
             /**
              * The configuration of the arena.
              * Your arena can use this to change the
@@ -146,7 +147,7 @@ namespace _Map
              * in the arena. Must be Parallel Luau-friendly.
              */
             script?: Actor;
-            model: Folder;
+            model: Model;
         }
         : Arena<ArenaLike & { model: T; }>;
 
@@ -196,10 +197,10 @@ namespace _Map
     {
         private currentMap!: MapInstance;
 
-        private readonly entityLocations = new Map<
-            Entity,
-            { arenaType: ArenaType; arenaIndex: number; }
-        >();
+        private readonly entityLocations!: Map<
+            ArenaType,
+            Map<number, Entity[]>
+        >;
 
         private readonly id = Identifier.GenerateComponentId(this, "id");
 
@@ -233,11 +234,31 @@ namespace _Map
 
             const arenaConfig = this.GetArenaConfig(arenaType, arenaIndex);
             const arenaOrigin = (arenaConfig.FindFirstChild("Origin") as CFrameValue | undefined)
-                ?.Value ?? arena.GetPivot();
+                ?.Value ?? arena.model.GetPivot();
             const arenaAxis = (arenaConfig.FindFirstChild("Axis") as Vector3Value | undefined)
-                ?.Value ?? arena.GetPivot().RightVector.mul(-1);
+                ?.Value ?? arena.model.GetPivot().RightVector.mul(-1);
 
-            this.entityLocations.set(entity, { arenaType, arenaIndex });
+            const currentEntityLocations = this.GetEntityLocations();
+            const arenaLocations = this.entityLocations.get(arenaType)!;
+            const arenaEntityLog = arenaLocations.get(arenaIndex)!;
+
+            // remove current index from old array (if it exists)
+            // FIXME: use table.move
+            const maybeCurrentLocationIndex = currentEntityLocations.get(entity)?.arenaIndex ?? os.clock();
+            if (arenaLocations.has(maybeCurrentLocationIndex))
+            {
+                const entityArray = arenaLocations.get(maybeCurrentLocationIndex);
+                const entityIndex = entityArray?.findIndex((e) => e.attributes.EntityId === entity.attributes.EntityId);
+                if (entityIndex && entityIndex !== -1)
+
+                    entityArray!.unorderedRemove(entityIndex);
+            }
+
+            if (!arenaEntityLog.includes(entity))
+
+                arenaEntityLog.push(entity);
+
+            const entityLogIndex = arenaEntityLog.findIndex((e) => e.attributes.EntityId === entity.attributes.EntityId);
             if (arenaType === ArenaType["2D"])
             {
                 entity
@@ -249,10 +270,18 @@ namespace _Map
                         ).add(new Vector3(0, 2)),
                     );
 
-                task.delay(0.25, () =>
-                {
-                    print(entity.GetPrimaryPart().GetPivot(), arenaOrigin.Position);
-                });
+                // task.delay(0.25, () =>
+                // {
+                //     print(entity.GetPrimaryPart().GetPivot(), arenaOrigin.Position);
+                // });
+
+
+                entity.SetOrigin(
+                    // even players are placed opposite of the direction of the axis (so if the axis faces right, they're placed left)
+                    CFrame.lookAlong(arenaOrigin.Position, arenaAxis).add(
+                        arenaAxis.mul(arenaConfig.CombatantSpacing.Value * (math.sign(entityLogIndex % 2) === 0 ? math.abs(-entityLogIndex) : math.abs(entityLogIndex)))
+                    )
+                )
             }
             else
             {
@@ -260,9 +289,10 @@ namespace _Map
                     "CombatantSpacing",
                 ) as NumberValue | undefined) ?? { Value: 5 };
                 const teleportationLocation = arena
+                    .model
                     .GetPivot()
                     .VectorToWorldSpace(
-                        (arena.config.Axis?.Value ?? arena.GetPivot().LookVector).mul(
+                        (arena.config.Axis?.Value ?? arena.model.GetPivot().LookVector).mul(
                             combatantSpacing * (os.clock() % 2 === 0 ? 1 : -1),
                         ),
                     );
@@ -279,6 +309,8 @@ namespace _Map
                     );
             }
 
+
+
             // FIXME: do this in @quarrelgame-framework/server's matchservice or whatever
             // const entityParticipant = Dependency<QuarrelGame>().GetParticipantFromCharacter(entity.instance);
             // print("trololololol:", entity.instance, entityParticipant);
@@ -292,7 +324,7 @@ namespace _Map
         ): { arenaType: ArenaType; arenaIndex: number; } | undefined
         {
             // print(this.entityLocations, entity, this.entityLocations.get(entity));
-            return this.entityLocations.get(entity);
+            return this.GetEntityLocations().get(entity);
         }
 
         public GetEntityLocations(): Map<
@@ -300,7 +332,19 @@ namespace _Map
             { arenaType: ArenaType; arenaIndex: number; }
         >
         {
-            return new Map([ ...this.entityLocations ]);
+            const outTable = [];
+            const locations = [...this.entityLocations];
+
+            for (const [arenaType ,arenaOfType] of locations)
+
+                for (const [id, entities] of arenaOfType)
+
+                    for (const entity of entities)
+
+                        outTable.push([entity, { arenaType, arenaIndex: id }] as const)
+
+
+            return new Map(outTable);
         }
 
         public GetArenaConfig(
@@ -327,17 +371,20 @@ namespace _Map
 
             this.currentMap.model.arena.GetChildren().forEach((arenaType) =>
             {
-                (arenaType.GetChildren() as Model[]).forEach((arena) =>
+                (arenaType.GetChildren() as Arena<ArenaLike>[]).forEach(({model, config}) =>
                 {
+                    /*
+                     * FIXME: make default values adjustable
+                     */
                     const defaultValues = [
                         Make("CFrameValue", {
                             Name: "Origin",
-                            Value: arena.GetPivot(),
+                            Value: model.GetPivot(),
                         }),
 
                         Make("Vector3Value", {
                             Name: "Axis",
-                            Value: arena.GetPivot().RightVector.mul(-1),
+                            Value: model.GetPivot().RightVector.mul(-1),
                         }),
 
                         Make("NumberValue", {
@@ -345,7 +392,7 @@ namespace _Map
                             Value: 5,
                         }),
 
-                        arena.Parent!.Name.match("2")[0]
+                        model.Parent!.Name.match("2")[0]
                             ? Make("Vector3Value", {
                                 Name: "Size",
                                 Value: new Vector3(100, 100, 0),
@@ -356,14 +403,13 @@ namespace _Map
                             }),
                     ];
 
-                    if (arena.FindFirstChild("config"))
+                    if (config)
                     {
                         print("arena config found");
-                        const arenaConfig = (arena as Arena).config;
                         defaultValues
                             .filter((defaultValue) =>
                             {
-                                for (const child of arenaConfig.GetChildren())
+                                for (const child of config.GetChildren())
                                 {
                                     if (child.Name === defaultValue.Name)
                                         return false;
@@ -371,19 +417,46 @@ namespace _Map
 
                                 return true;
                             })
-                            .forEach((configElement) => (configElement.Parent = arenaConfig));
+                            .forEach((configElement) => (configElement.Parent = config));
                     }
                     else
                     {
                         warn("arena config not found");
                         Make("Configuration", {
                             Name: "config",
-                            Parent: arena,
+                            Parent: config,
                             Children: defaultValues,
                         });
                     }
                 });
             });
+
+            /* readonly property moment */
+            (this as unknown as Record<string, unknown>).entityLocations = new Map([
+                [
+                    ArenaType["2D"], 
+                    new Map(this.currentMap.model.arena._2d.GetChildren().map((_,i) => [i, []]))
+                ],  
+                [
+                    ArenaType["3D"], 
+                    new Map(this.currentMap.model.arena._3d.GetChildren().map((_,i) => [i, []]))
+                ]
+
+            ])
+
+            this.currentMap.model.arena.GetChildren().filter((e) => e.IsA("Folder")).forEach((arenaType) =>
+            {
+                for (const arena of arenaType.GetChildren().filter((e) => e.IsA("Folder")))
+                {
+                    const currentArena = arena as MapNamespace.Arena;
+                    Make("Attachment", {
+                        Name: "OriginAttachment",
+                        Parent: currentArena.model.PrimaryPart,
+                        Axis: currentArena.config.Axis.Value
+                    });
+                }
+                
+            })
         }
     }
 }

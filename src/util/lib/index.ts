@@ -244,9 +244,9 @@ export interface MatchData
     Map: Folder;
 
     /** The match's current arena. */
-    Arena: Model & {
+    Arena: Folder & {
         /** The model of the arena. */
-        model: Folder;
+        model: Model;
         /** Arena parameters. */
         config: MapNamespace.ConfigurationToValue;
         /** Arena controller. */
