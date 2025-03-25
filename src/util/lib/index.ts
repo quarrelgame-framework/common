@@ -5,6 +5,7 @@ import { QuarrelFunctions } from "network";
 import type { Entity, EntityAttributes } from "components/entity.component";
 import type MapNamespace from "components/map.component";
 import type Character from "util/character";
+import { Skill } from "util/character";
 
 /* FIXME: introduce some kind of project root transformer */
 export const QuarrelGameFolder = ReplicatedStorage.WaitForChild("QuarrelGame") as Folder;
@@ -172,6 +173,135 @@ export interface MatchSettings
      * @see {@link ArenaTypeFlags}
      */
     ArenaType: number;
+
+    /**
+     * The parameters for the Training Mode, if enabled.
+     * @see {@link TrainingMapParameters}
+     */
+    Training?: TrainingAttributes;
+}
+
+/**
+ * Parameters used to determine the positioning
+ * of characters upon respawn.
+ */
+export enum TrainingMapParameters
+{
+    LEFT = 0x01,
+    CENTER = 0x02,
+    RIGHT = 0x04,
+
+    CLOSE = 0x10,
+    MID = 0x20,
+    FAR = 0x40,
+}
+
+/**
+ * Parameters for the training dummy
+ * when replaying a set of inputs to
+ * determine when to start playing.
+ */
+enum TrainingDummyReplayParameters
+{
+    ON_ROUND_START,
+    
+    ON_METER_USE,
+    ON_HALF_METER,
+    ON_BURST,
+
+    AFTER_MOVE_CONTACT,
+    AFTER_MOVE_EXECUTE,
+    AFTER_MOVE_WHIFF,
+
+    ON_DASH,
+    ON_FORWARD_DASH,
+    ON_BACKDASH,
+    ON_JUMP,
+
+    ON_HIT,
+    ON_COUNTER_HIT,
+
+    ON_KNOCKDOWN,
+    ON_HARD_KNOCKDOWN,
+    ON_RECOVERY,
+
+    ON_HIGH,
+    ON_MID,
+    ON_LOW,
+}
+
+/*
+ * TODO: integrate this with server/matchservice and testservice
+ * to have a functional training mode
+ */
+type NumericKeys<T> = {
+  [K in keyof T]: T[K] extends number ? K : never;
+}[keyof T];
+
+type RegeneratableValues<E extends Entity = Entity> = { 
+    /* TODO: filter keys where values are not numbers (or keys are equal to State) */
+    [K in keyof Pick<E["attributes"], NumericKeys<E["attributes"]>> as `${K & string}RegenRate`]?: number;
+} 
+
+export type TrainingAttributes<E extends Entity = Entity> = RegeneratableValues<E> & 
+{
+    /**
+     * Whether the training mode is enabled.
+     */
+    Enabled: boolean;
+
+    /**
+     * The position of the characters on respawn.
+     */
+    RespawnPosition: number | TrainingMapParameters;
+
+    /**
+     * Parameters for the training dummy.
+     */
+    TrainingDummy: RegeneratableValues<E>
+    & 
+    {
+        /**
+         * The character ID of the training dummy.
+         */
+        CharacterId: string,
+
+        /**
+         * The CPU level of the training dummy.
+         * Values below zero disable the CPU.
+         */
+        CPULevel: number,
+
+        /**
+         * The ID of the recorded motion for the training dummy.
+         */
+        RecordedMotionId: number;
+
+        /**
+         * The paramaters that need to be satisfied in order
+         * for a flag to exist.
+         *
+         * 0 disables the flags.
+         */
+        RecordedMotionPlayFlags: TrainingDummyReplayParameters | 0;
+
+        /**
+         * The IDs of the skills to trigger the AFTER_MOVE flags.
+         */
+        StoredMoveIds: string[];
+
+        /**
+         * The multiplier of the rate of the positive bonus.
+         * Lower numbers are faster.
+         */
+        PositiveBonusLeniency: number,
+
+        /**
+         * The multiplier of the rate of the negative penalty.
+         * Lower numbers are faster.
+         */
+        NegativePenaltyLeniency: number,
+    };
 }
 
 export interface MatchState<EntityAttr extends EntityAttributes>

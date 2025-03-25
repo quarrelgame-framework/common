@@ -1,7 +1,7 @@
 import { Workspace } from "@rbxts/services";
 import { QuarrelMaps } from "util/lib";
-
 import type Map from "components/map.component";
+import Make from "@rbxts/make";
 
 export namespace Model
 {
