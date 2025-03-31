@@ -682,7 +682,9 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
 
     onStart()
     {
-        this.attributes.EntityId = Identifier.GenerateComponentId(this, "EntityId");
+        if (this.attributes.EntityId === "generate")
+
+            this.attributes.EntityId = Identifier.GenerateComponentId(this, "EntityId");
         this.onAttributeChanged("State", () =>
         {
             if (this.IsGrounded())
