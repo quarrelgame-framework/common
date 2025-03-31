@@ -203,6 +203,12 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
 
         this.ControllerManager.BaseMoveSpeed = this.attributes.WalkSpeed;
         this.GroundController.GroundOffset = this.Humanoid.HipHeight * this.GroundOffsetMultiplier;
+        this.GroundController.AccelerationTime = 0;
+        this.GroundController.DecelerationTime = 0.1;
+        this.GroundController.Friction = 1;
+        this.GroundController.FrictionWeight = 1.2;
+        this.GroundController.MoveSpeedFactor = 1;
+        this.GroundController.TurnSpeedFactor = 1;
         this.Humanoid.WalkSpeed = this.attributes.WalkSpeed;
         this.Humanoid.Health = this.attributes.Health;
         this.Humanoid.MaxHealth = this.attributes.MaxHealth;
