@@ -278,6 +278,17 @@ export type TrainingAttributes<E extends Entity = Entity> = RegeneratableValues<
         RecordedMotionId: number;
 
         /**
+         * The direction the Training Dummy is facing.
+         *
+         * If this option is unset, when the training dummy
+         * is on its lonesome or with more than one player,
+         * it will face the center.
+         * 
+         * Otherwise, the Dummy will face the first player if unset.
+         */
+        DummyFacing?: TrainingMapParameters.LEFT | TrainingMapParameters.CENTER | TrainingMapParameters.RIGHT;
+
+        /**
          * The paramaters that need to be satisfied in order
          * for a flag to exist.
          *
