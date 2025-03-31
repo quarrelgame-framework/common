@@ -468,7 +468,11 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
     }
     public GetPrimaryPart()
     {
-        return this.instance.PrimaryPart;
+        while (!this.instance.PrimaryPart && this.instance.IsDescendantOf(game)) {
+            RunService.IsServer() ? RunService.Heartbeat.Wait() : RunService.RenderStepped.Wait();
+        } 
+
+        return this.instance.PrimaryPart
     }
 }
 
