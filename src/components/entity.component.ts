@@ -1,5 +1,5 @@
 import { BaseComponent, Component, Components } from "@flamework/components";
-import { Dependency, OnPhysics, OnRender, OnStart, OnTick, Reflect } from "@flamework/core";
+import { Dependency, Modding, OnPhysics, OnRender, OnStart, OnTick, Reflect } from "@flamework/core";
 import { Players, RunService, Workspace } from "@rbxts/services";
 import { Identifier } from "util/identifier";
 import { BlockMode, EntityState, HitData, HitResult, PhysicsDash, isStateAggressive, isStateCounterable, isStateNegative, isStateNeutral } from "util/lib";
@@ -33,6 +33,12 @@ const Fetcher = <T extends keyof CreatableInstances>(thisInstance: Instance, ins
         return (isServer ? thisInstance.FindFirstChild(instanceName) : thisInstance.WaitForChild(instanceName, 1.5)) as Instances[T] ?? new Instance(instanceToCreate, thisInstance);
 
      return thisInstance.WaitForChild(instanceName) as Instances[T];
+}
+
+export interface EntityEvents<E extends EntityBase<EntityBaseAttributes> = EntityBase<EntityBaseAttributes>>
+{
+    onEntityAdded?(entity: E): void
+    onEntityRemoved?(entity: E): void
 }
 
 export interface EntityBaseAttributes extends Record<string, unknown>, StateAttributes {
@@ -103,8 +109,15 @@ export const EntityBaseDefaults: EntityBaseAttributes = {
 @Component({
     defaults: EntityBaseDefaults,
 })
-export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics 
+export abstract class EntityBase<A extends EntityBaseAttributes, I extends ICharacter = ICharacter> extends StatefulComponent<A, I> implements OnTick, OnStart, OnPhysics 
 {
+    private static EntityListeners: Set<EntityEvents> = new Set();
+    static {
+        warn("entity init thing ready");
+        Modding.onListenerAdded<EntityEvents>((l) => this.EntityListeners.add(l));
+        Modding.onListenerRemoved<EntityEvents>((l) => this.EntityListeners.delete(l));
+    }
+
     public readonly ControllerManager = Fetcher(this.instance.Humanoid, "ControllerManager", "ControllerManager")
     public readonly GroundSensor = Fetcher(this.instance.HumanoidRootPart, "GroundSensor", "ControllerPartSensor", true)
     public readonly ClimbSensor = Fetcher(this.instance.HumanoidRootPart, "ClimbSensor", "ControllerPartSensor", true);
@@ -149,7 +162,7 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
             this.PlaneConstraint.Attachment0 = this.PlaneConstraintTarget;
             this.PlaneConstraint.Attachment1 = this.instance.PrimaryPart.RootAttachment;
             this.PlaneConstraintTarget.WorldPosition = newOrigin.Position;
-            this.PlaneConstraintTarget.Axis = newOrigin.LookVector.Cross(newOrigin.UpVector);
+            this.PlaneConstraintTarget.Axis = newOrigin.LookVector.Cross(this.ControllerManager.UpDirection);
             this.PlaneConstraintTarget.Name = `PlaneConstraintTarget${this.attributes.EntityId}`;
         });
 
@@ -159,6 +172,12 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
     onStart()
     {
         debug.profilebegin("Entity Initialization")
+        for (const listener of EntityBase.EntityListeners)
+
+            Promise.promisify(() => listener.onEntityAdded?.(this));
+
+
+
         if (this.instance.Humanoid.HipHeight === 0)
         {
             if (this.Humanoid.RigType === Enum.HumanoidRigType.R15)
@@ -209,9 +228,11 @@ export abstract class EntityBase<A extends EntityBaseAttributes, I extends IChar
         this.GroundController.FrictionWeight = 1.2;
         this.GroundController.MoveSpeedFactor = 1;
         this.GroundController.TurnSpeedFactor = 1;
+
         this.Humanoid.WalkSpeed = this.attributes.WalkSpeed;
         this.Humanoid.Health = this.attributes.Health;
         this.Humanoid.MaxHealth = this.attributes.MaxHealth;
+
 
         this.Humanoid.SetStateEnabled(Enum.HumanoidStateType.FallingDown, false);
         this.onAttributeChanged("WalkSpeed", () => {
@@ -619,7 +640,7 @@ export interface EntityAttributes extends EntityBaseAttributes
      *
     * */
 
-    MatchId: string;
+    MatchId?: string;
 
     /**
      * The current State the Entity is in.
@@ -685,6 +706,7 @@ export class Entity<I extends EntityAttributes = EntityAttributes> extends Entit
         if (this.attributes.EntityId === "generate")
 
             this.attributes.EntityId = Identifier.GenerateComponentId(this, "EntityId");
+
         this.onAttributeChanged("State", () =>
         {
             if (this.IsGrounded())
