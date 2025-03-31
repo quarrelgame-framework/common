@@ -1,11 +1,20 @@
 
-import { BaseComponent, Component, Components } from "@flamework/components";
-import { Dependency, OnStart } from "@flamework/core";
-import Make from "@rbxts/make";
-import MapNamespace from "components/map.component";
+import { BaseComponent, Component } from "@flamework/components";
+import { OnStart } from "@flamework/core";
 import { Entity } from "components/entity.component";
 import { Identifier } from "util/identifier";
 import { Model } from "util/model";
+
+import Make from "@rbxts/make";
+import MapNamespace from "components/map.component";
+
+/*
+ * TODO: make a spring constraint for every entity 
+ *  
+ * when there is more than one entity,
+ * find the nearest entity. set the constraint
+ * attachment to that entity's rootpart.
+ */
 
 namespace _Map
 {
@@ -228,7 +237,7 @@ namespace _Map
             entity: Entity,
         )
         {
-            print("it runs!");
+            print("it runs!", entity, debug.traceback());
             const arena = this.GetArenaFromIndex(arenaType, arenaIndex);
             assert(arena, `arena of index ${arenaIndex} does not exist.`);
 
@@ -254,7 +263,7 @@ namespace _Map
                     entityArray!.unorderedRemove(entityIndex);
             }
 
-            if (!arenaEntityLog.includes(entity))
+            if (!arenaEntityLog.find((e) => e.attributes.EntityId === entity.attributes.EntityId))
 
                 arenaEntityLog.push(entity);
 
@@ -267,9 +276,10 @@ namespace _Map
                         CFrame.lookAt(
                             arenaOrigin.Position,
                             arenaOrigin.add(arenaAxis).Position,
-                        ).add(new Vector3(0, 2)),
+                        ).add(new Vector3(0, 2))
                     );
 
+                    // arenaAxis.mul(arenaConfig.CombatantSpacing.Value * (math.sign(entityLogIndex % 2) === 0 ? math.abs(-entityLogIndex) : math.abs(entityLogIndex))))
                 // task.delay(0.25, () =>
                 // {
                 //     print(entity.GetPrimaryPart().GetPivot(), arenaOrigin.Position);
@@ -318,7 +328,19 @@ namespace _Map
             // {
             //     print("entity participant found:", entityParticipant);
             // }
+
+            Promise.race([entity.instance.Destroying, entity.Humanoid.Died].map((e) => Promise.fromEvent(e))).then(() =>
+            {
+                warn("removing entity", entity.attributes.EntityId, "from location due to death");
+                const loc = this.GetEntityLocation(entity)!
+                const entities = this.entityLocations.get(loc.arenaType)?.get(loc.arenaIndex)!
+                const entityIndex = entities.findIndex((e) => e === entity);
+                if (entityIndex !== -1)
+
+                    entities?.remove(entityIndex);
+            })
         }
+
         public GetEntityLocation(
             entity: Entity,
         ): { arenaType: ArenaType; arenaIndex: number; } | undefined
