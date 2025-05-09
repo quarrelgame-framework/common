@@ -182,8 +182,18 @@ export namespace Server
     export interface Events extends MatchEvents
     {
         Test(): void;
+
+        /*
+         * Called by the client immediately when the user
+         * is able to network.
+         */
+        Joined(): void;
     }
 
+    /**
+     * TODO: PLEASE make some kind of indication that
+     * this is server functions and NOT client functions PLEASE
+     */
     export interface Functions extends GameFunctions
     {
         /**
@@ -197,6 +207,11 @@ export namespace Server
         KnockbackTest(): boolean;
         TrailTest(): boolean;
         MatchTest(): boolean;
+
+        /**
+         * Determine whether an entity exists or otherwise.
+         */
+        EntityIsRegistered(entityId?: string): boolean;
     }
 }
 
@@ -235,6 +250,21 @@ export namespace Client
          * Fired when a match is started.
          */
         MatchStarted(matchId: string, matchData: ReturnType<Server.Functions["GetCurrentMatch"]>): void;
+        /**
+         * Fired when an entity is registered by the server, 
+         * to be then registered by the client.
+         */
+        EntityRegistered(entityId: string, entityModel: Model, entityComponentId: string): void;
+        /**
+         * Fired when an entity is registered by the server, 
+         * to be then registered by the client.
+         */
+        EntityUnregistered(entityId: string): void;
+        /**
+         * Fired when the client is joining in to sync
+         * pre-existing entities.
+         */
+        SyncEntities(entities: (readonly [Model, string | undefined])[]): void;
     }
 
     export interface Events extends MatchEvents
