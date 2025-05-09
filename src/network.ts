@@ -172,7 +172,7 @@ export namespace Server
          *
          * @param characterId The character to spawn as when the match starts.
          */
-        SelectCharacter(characterId: string): boolean;
+        RequestSelectCharacter(characterId: string): boolean;
     }
 
     interface MatchEvents
